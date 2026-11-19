@@ -3,6 +3,7 @@ import {
 	Input, Button, Badge, Switch, Label, Separator,
 	ToggleGroup, ToggleGroupItem,
 	Combobox, ComboboxChips, ComboboxValue, ComboboxChip, ComboboxChipsInput, ComboboxContent, ComboboxEmpty, ComboboxList, ComboboxItem,
+	Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 	SearchIcon, XIcon, ArrowLeftIcon, ChevronRightIcon
 } from "https://cdn.jsdelivr.net/npm/@nemanjan00/qrp-shadcdn@0.4.0/dist/qrp-shadcdn.js/+esm";
 
@@ -912,6 +913,74 @@ const ownerToggle = () => {
 		}));
 };
 
+// --- UI: MCP dialog -----------------------------------------------------------
+
+const MCP_NAME = "sigint-srbija";
+const MCP_DOCS = "https://github.com/nemanjan00/sigint-srbija/blob/main/docs/mcp.md";
+
+// Setup per client; the endpoint is this site's own /mcp
+const mcpClients = (url) => {
+	return [
+		{ label: "Claude Code", hint: "Add --scope user to have it in every project.", code: "claude mcp add --transport http " + MCP_NAME + " " + url },
+		{ label: "Codex CLI", code: "codex mcp add " + MCP_NAME + " --url " + url },
+		{ label: "VS Code", code: "code --add-mcp '" + JSON.stringify({ name: MCP_NAME, type: "http", url: url }) + "'" },
+		{ label: "Cursor", hint: "~/.cursor/mcp.json", code: JSON.stringify({ mcpServers: { [MCP_NAME]: { url: url } } }, null, 2) },
+		{ label: "Claude Desktop / claude.ai", hint: "Settings → Connectors → Add custom connector, with this URL.", code: url },
+		{ label: "Local-only (stdio) clients", hint: "Bridged with mcp-remote.", code: JSON.stringify({ mcpServers: { [MCP_NAME]: { command: "npx", args: ["-y", "mcp-remote", url] } } }, null, 2) }
+	];
+};
+
+const copyBlock = (code) => {
+	return el("div", { class: "group/code relative min-w-0" },
+		el("pre", { class: "whitespace-pre-wrap break-all rounded-lg border border-white/5 bg-black/40 py-2.5 pl-3 pr-16 text-[12px] leading-relaxed text-foreground" }, code),
+		Button({
+			variant: "ghost",
+			size: "sm",
+			class: "group/copy absolute right-1.5 top-1.5 h-7 px-2 text-[11px] text-muted-foreground data-[copied=true]:text-primary",
+			onclick: (event) => {
+				const button = event.currentTarget;
+				navigator.clipboard.writeText(code).then(() => {
+					button.dataset.copied = "true";
+					setTimeout(() => {
+						delete button.dataset.copied;
+					}, 1600);
+				});
+			}
+		},
+		el("span", { class: "group-data-[copied=true]/copy:hidden" }, "Copy"),
+		el("span", { class: "hidden group-data-[copied=true]/copy:inline" }, "Copied")));
+};
+
+const mcpDialog = () => {
+	const url = location.origin + "/mcp";
+
+	return Dialog(
+		DialogTrigger(Button({ variant: "outline", size: "sm", class: "h-8 gap-1.5 rounded-full border-primary/30 px-3 text-xs text-primary hover:bg-primary/10", title: "Use this database from an AI assistant" },
+			el("span", { class: "dot !size-1.5" }), "MCP")),
+		// grid items default to min-width: auto, so long commands would widen the dialog
+		DialogContent({ class: "thin-scroll max-h-[90dvh] overflow-y-auto sm:max-w-[560px] [&>*]:min-w-0" },
+			DialogHeader(
+				DialogTitle("Search this map from your AI assistant"),
+				DialogDescription("A public, read-only MCP server. No key needed. Ask things like “what's on 145.600 MHz?” or “70 cm repeaters near Kragujevac”.")),
+			el("div", { class: "grid gap-1.5" },
+				el("div", { class: "text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground" }, "Endpoint (Streamable HTTP)"),
+				copyBlock(url)),
+			...mcpClients(url).slice(0, 5).map((client) => {
+				return el("div", { class: "grid gap-1.5" },
+					el("div", { class: "flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5" },
+						el("span", { class: "text-sm font-medium" }, client.label),
+						client.hint ? el("span", { class: "text-[11px] text-muted-foreground" }, client.hint) : null),
+					copyBlock(client.code));
+			}),
+			el("details", { class: "group grid gap-1.5" },
+				el("summary", { class: "flex cursor-pointer list-none items-center gap-2 text-sm text-muted-foreground hover:text-foreground" },
+					ChevronRightIcon({ class: "size-3.5 transition-transform group-open:rotate-90" }), "Clients that only run local servers"),
+				el("div", { class: "mt-2" }, copyBlock(mcpClients(url)[5].code))),
+			el("div", { class: "flex flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-3 text-xs text-muted-foreground" },
+				el("span", {}, "Tools: search_emitters · find_frequency · get_emitter · database_info"),
+				el("a", { href: MCP_DOCS, target: "_blank", rel: "noreferrer", class: "text-primary hover:underline" }, "Docs ↗"))));
+};
+
 const resetFilters = () => {
 	s.query = "";
 	s.sources = Object.keys(SOURCES);
@@ -972,7 +1041,9 @@ const filterPanel = () => {
 			el("div", { class: "grid" },
 				el("h1", { class: "glow-text text-lg font-bold tracking-tight" }, "SIGINT Srbija"),
 				el("span", { class: "text-xs text-muted-foreground" }, "Public signal sources in Serbia")),
-			Button({ variant: "ghost", size: "sm", class: "text-xs text-muted-foreground", onclick: resetFilters }, "Reset")),
+			el("div", { class: "flex items-center gap-1" },
+				mcpDialog(),
+				Button({ variant: "ghost", size: "sm", class: "text-xs text-muted-foreground", onclick: resetFilters }, "Reset"))),
 		el("div", { class: "flex items-baseline gap-1.5" },
 			el("span", { class: "font-mono text-2xl font-semibold text-foreground" }, () => formatNumber(s.shown)),
 			el("span", { class: "text-sm text-muted-foreground" }, () => "of " + formatNumber(s.total) + " on the map")),
