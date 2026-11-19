@@ -3,11 +3,14 @@ const path = require("path");
 const express = require("express");
 const compression = require("compression");
 const emitters = require("./emitters");
+const mcp = require("../mcp");
 
 const PUBLIC_DIR = path.join(__dirname, "public");
 
 const app = express();
 
+// behind Traefik: trust X-Forwarded-* for req.protocol / host (MCP result links)
+app.set("trust proxy", true);
 app.use(compression());
 
 // Container healthcheck: the database opens and answers
@@ -16,6 +19,10 @@ app.get("/healthz", (_req, res) => {
 	res.json({ ok: true });
 });
 app.use(express.static(PUBLIC_DIR));
+
+app.post("/mcp", express.json({ limit: "1mb" }), mcp.handle);
+app.get("/mcp", mcp.methodNotAllowed);
+app.delete("/mcp", mcp.methodNotAllowed);
 
 // Every emitter with coordinates, compact (see emitters.getMapData)
 app.get("/api/map", (_req, res) => {

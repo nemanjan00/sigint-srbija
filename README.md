@@ -49,7 +49,8 @@ PORT=3300 yarn web      # map on http://localhost:3300
 | `yarn reg203-enrich` | add holder name/address, inspection and start-of-use dates, full station description to licences |
 | `yarn gazetteer` | geocode site names that still have no position (OpenStreetMap Nominatim, 1 req/s) into `data/gazetteer.json` — review the result, wrong matches happen |
 | `yarn ratel-docs [slug ...]` | mirror RATEL documents into `lib/` (`--tree` to only list pages) |
-| `yarn web` / `yarn watch` | map server (forever / nodemon) |
+| `yarn web` / `yarn watch` | map server + MCP (forever / nodemon) |
+| `yarn cron` | scheduled update: `fetch` + `reg203-enrich` every night at 04:00 Europe/Belgrade (`UPDATE_SCHEDULE`, `UPDATE_TIMEZONE`, `UPDATE_ON_START=1`) |
 | `yarn lint` | ESLint |
 
 ## The map
@@ -78,6 +79,21 @@ API used by the page:
 | `GET /api/map` | every emitter with a position, as compact rows |
 | `GET /api/emitters/:id` | one emitter, its other listings, and for licences the full register row and the licence's other assignments |
 | `GET /api/emitter?source=&key=` | the same, by stable key |
+| `POST /mcp` | MCP server (see above) |
+
+## MCP
+
+AI assistants can search the database over [MCP](https://modelcontextprotocol.io):
+public, read-only, no key, at `https://sigint.nemanja.top/mcp`.
+
+```sh
+claude mcp add --transport http sigint-srbija https://sigint.nemanja.top/mcp   # Claude Code
+codex mcp add sigint-srbija --url https://sigint.nemanja.top/mcp               # Codex CLI
+```
+
+Tools: `search_emitters` (text, frequency range, area, filters),
+`find_frequency` (what's on 145.600?), `get_emitter`, `database_info`.
+Other clients, tool details and example questions: [docs/mcp.md](docs/mcp.md).
 
 ## Database
 

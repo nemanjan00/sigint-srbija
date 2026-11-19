@@ -49,6 +49,10 @@ Default port 3000 is taken on the dev machine; use `PORT=3300`.
 - Responsive: below 768 px the filter panel and details are bottom sheets under a top bar (search + Filters button); bigger tap radius on touch devices. Check both a desktop and a phone viewport (390×844, touch) when changing layout.
 - `window.sigintMap` exposes the map for debugging; verify UI changes in a real browser (headless Chromium + puppeteer-core works with `--use-angle=swiftshader`).
 
+## MCP (`src/mcp`, POST /mcp)
+
+Public, read-only, stateless Streamable HTTP MCP server on the web app (official `@modelcontextprotocol/sdk`, zod schemas); one server + transport per request. Tools: `search_emitters`, `find_frequency`, `get_emitter`, `database_info`; all results carry the map `url`. Search runs in memory over every emitter (`src/search`, cached per `sources.fetched_at`, folded text). User-facing docs with client setup commands: `docs/mcp.md`. Test with the SDK client (`StreamableHTTPClientTransport`), not by editing the user's MCP config.
+
 ## Storage (global)
 
 One SQLite database, `data/sigint.sqlite` (gitignored), `src/storage`:
