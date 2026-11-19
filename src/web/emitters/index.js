@@ -2,6 +2,7 @@
 const storage = require("../../storage");
 const sector = require("../../reg203/sector");
 const spectrum = require("../spectrum");
+const ratelRegistry = require("../../services/ratel-registry");
 
 // Columns sent to the browser for every point, in this order
 const MAP_COLUMNS = ["id", "lat", "lon", "source", "kind", "mode", "tx_hz", "tx_high_hz", "active", "callsign", "operator", "location", "station_type", "service_type", "sector", "owner", "coord_accuracy_m", "duplicate_of"];
@@ -88,6 +89,8 @@ const getEmitter = (id) => {
 		// other assignments of the same licence
 		result.licence = db.prepare(`SELECT id, tx_freq_raw, rx_freq_raw, lokacija, vazeca FROM reg203_assignments
 			WHERE broj_dozvole = ? ORDER BY id LIMIT 200`).all(result.raw.broj_dozvole);
+		// the register's own entry: a search by licence number lists its assignments
+		result.record_url = ratelRegistry.getSearchUrl("reg203", { filter: result.raw.broj_dozvole });
 	}
 
 	result.spectrum = spectrum.getSpectrum(result);

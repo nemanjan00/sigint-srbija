@@ -84,6 +84,18 @@ const ratelRegistry = {
 	},
 
 	/**
+	 * Link to a search of register on the public site (for people, not fetched)
+	 * @param {string} register - Register id, e.g. "reg203"
+	 * @param {Object} [params] - Overrides of SEARCH_PARAMS (e.g. { filter: "025/000289/001" })
+	 * @returns {string} URL
+	 */
+	getSearchUrl: (register, params) => {
+		const query = new URLSearchParams(Object.assign({}, SEARCH_PARAMS, params || {}));
+
+		return BASE_URL + "/cyr/" + register + "?" + query.toString();
+	},
+
+	/**
 	 * Whole register as the site's CSV export (UTF-16LE with BOM, TSV)
 	 * @param {string} register - Register id, e.g. "reg203"
 	 * @param {Object} [params] - Search form fields of that register (default: reg203's empty search)

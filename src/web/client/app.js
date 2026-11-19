@@ -1468,7 +1468,12 @@ const licenceBlock = (detail) => {
 
 	return el("div", { class: "grid gap-1" },
 		el("div", { class: "mb-1 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground" }, "Licence"),
-		field("Number", row.broj_dozvole, { mono: true }),
+		el("div", { class: "grid grid-cols-[110px_1fr] items-center gap-3 py-1.5 text-sm" },
+			el("span", { class: "text-muted-foreground" }, "Number"),
+			el("div", { class: "flex flex-wrap items-center gap-2" },
+				el("span", { class: "font-mono text-[13px]" }, row.broj_dozvole),
+				// the register's own entry (holder, site, frequencies) — the source of this record
+				detail.record_url ? el("a", { class: "text-[11px] text-primary hover:underline", target: "_blank", rel: "noreferrer", href: detail.record_url }, "View in RATEL register ↗") : null)),
 		// enriched rows have name and address separately; otherwise show the register's combined text
 		field("Holder", row.enriched ? row.nosilac_naziv : row.nosilac),
 		field("Holder address", row.enriched ? row.nosilac_adresa : null),
