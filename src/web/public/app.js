@@ -33,10 +33,11 @@ const KINDS = {
 	licence: { label: "Licences", color: "#f59e0b" },
 	broadcast: { label: "Broadcast", color: "#f43f5e" },
 	cell: { label: "Cell sites", color: "#34d399" },
-	link: { label: "Wi-Fi & links", color: "#94a3b8" }
+	link: { label: "Wi-Fi & links", color: "#94a3b8" },
+	mesh: { label: "Mesh (LoRa)", color: "#fb923c" }
 };
-// Kinds of the amateur sources (SRS, BrandMeister); the rest are RATEL registers
-const AMATEUR_KINDS = ["repeater", "digipeater", "beacon"];
+// Kinds of the amateur / community sources (SRS, BrandMeister, mesh); the rest are RATEL registers
+const AMATEUR_KINDS = ["repeater", "digipeater", "beacon", "mesh"];
 
 const SOURCES = {
 	"yu1srs-repeaters": { label: "SRS table", color: "#22d3ee" },
@@ -45,7 +46,8 @@ const SOURCES = {
 	"ratel-reg203": { label: "RATEL licences", color: "#f59e0b" },
 	"ratel-reg204": { label: "RATEL broadcast", color: "#f43f5e" },
 	"ratel-reg221": { label: "RATEL cell sites", color: "#34d399" },
-	"ratel-reg215": { label: "RATEL Wi-Fi & links", color: "#94a3b8" }
+	"ratel-reg215": { label: "RATEL Wi-Fi & links", color: "#94a3b8" },
+	"jugomesh": { label: "Jugomesh", color: "#fb923c" }
 };
 
 // Frequency presets (Hz). Emitters match when their TX range overlaps.
@@ -107,7 +109,7 @@ const loadData = () => {
 				type: "Feature",
 				id: row.id,
 				geometry: { type: "Point", coordinates: [row.lon, row.lat] },
-				properties: { id: row.id, kind: row.kind, label: AMATEUR_KINDS.includes(row.kind) ? (row.callsign || "") : "" }
+				properties: { id: row.id, kind: row.kind, label: AMATEUR_KINDS.includes(row.kind) ? (row.callsign || (row.kind === "mesh" ? row.name : "") || "") : "" }
 			};
 		});
 		data.haystacks = data.rows.map((row) => {
@@ -1106,17 +1108,16 @@ const filterPanel = () => {
 	},
 	el("div", { class: "mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-white/20 md:hidden" }),
 	el("header", { class: "sticky top-0 z-10 grid gap-3 border-b border-white/5 bg-[color-mix(in_oklch,var(--card)_85%,transparent)] p-5 backdrop-blur-xl" },
-		el("div", { class: "flex items-center justify-between" },
-			el("div", { class: "grid" },
-				el("h1", { class: "glow-text text-lg font-bold tracking-tight" }, "SIGINT Srbija"),
-				el("span", { class: "text-xs text-muted-foreground" }, "Public signal sources in Serbia")),
-			el("div", { class: "flex items-center gap-1" },
-				Button({ variant: "outline", size: "sm", class: "h-7 rounded-full px-3 text-xs", onclick: () => {
-					openExplorer(s.detail ? selectionOf(s.detail) : null);
-				} }, "Spectrum"),
-				Button({ variant: "outline", size: "sm", class: "h-7 rounded-full px-3 text-xs", title: "RF panorama around your location (AR with the camera on phones)", onclick: openAroundMe }, "Around me"),
-				mcpDialog(),
-				Button({ variant: "ghost", size: "sm", class: "text-xs text-muted-foreground", onclick: resetFilters }, "Reset"))),
+		el("div", { class: "grid" },
+			el("h1", { class: "glow-text text-lg font-bold tracking-tight" }, "SIGINT Srbija"),
+			el("span", { class: "text-xs text-muted-foreground" }, "Public signal sources in Serbia")),
+		el("div", { class: "flex flex-wrap items-center gap-1" },
+			Button({ variant: "outline", size: "sm", class: "h-7 rounded-full px-3 text-xs", onclick: () => {
+				openExplorer(s.detail ? selectionOf(s.detail) : null);
+			} }, "Spectrum"),
+			Button({ variant: "outline", size: "sm", class: "h-7 rounded-full px-3 text-xs", title: "RF panorama around your location (AR with the camera on phones)", onclick: openAroundMe }, "Around me"),
+			mcpDialog(),
+			Button({ variant: "ghost", size: "sm", class: "ml-auto text-xs text-muted-foreground", onclick: resetFilters }, "Reset")),
 		el("div", { class: "flex items-baseline gap-1.5" },
 			el("span", { class: "font-mono text-2xl font-semibold text-foreground" }, () => formatNumber(s.shown)),
 			el("span", { class: "text-sm text-muted-foreground" }, () => "of " + formatNumber(s.total) + " on the map")),

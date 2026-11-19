@@ -57,7 +57,7 @@ const STATION_TYPES = {
 	NL: { hear: "Maritime navigation beacon", prefer: ["navigation"] },
 	SM: { hear: "Meteorological aids station", prefer: ["radiosonde"] }
 };
-const OWN_BANDWIDTH_KINDS = ["broadcast", "cell", "link"];
+const OWN_BANDWIDTH_KINDS = ["broadcast", "cell", "link", "mesh"];
 // Band plan hints shown for a licence (the full list of uses is shown anyway)
 const MAX_PLAN_HINTS = 2;
 
@@ -72,6 +72,10 @@ const fromEmitter = (emitter) => {
 		}
 
 		return { hear: "FM broadcast radio: wideband FM stereo, station name and text on RDS", bandwidthHz: 200000, technology: "FM broadcast" };
+	}
+
+	if (emitter.kind === "mesh") {
+		return { hear: "Meshtastic LoRa mesh node: short chirp bursts (text, positions, telemetry) on 869.525 MHz — decode with any Meshtastic radio, or see them on jugomesh.com", bandwidthHz: 250000, technology: "LoRa" };
 	}
 
 	if (emitter.kind === "cell") {
