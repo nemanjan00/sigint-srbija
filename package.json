@@ -1,0 +1,41 @@
+{
+  "name": "sigint-srbija",
+  "version": "1.0.0",
+  "license": "MIT",
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "compression": "^1.8.2",
+    "csv-parse": "^7.0.3",
+    "entities": "^9.0.0",
+    "express": "^5.3.0",
+    "forever": "^4.0.3",
+    "got-verbose": "^0.0.19",
+    "queue-promised": "^0.0.31"
+  },
+  "devDependencies": {
+    "@babel/core": "^8.1.2",
+    "@babel/eslint-parser": "^8.1.2",
+    "eslint": "8",
+    "nodemon": "^3.1.14"
+  },
+  "scripts": {
+    "web": "forever src",
+    "watch": "nodemon src",
+    "fetch": "node bin/fetch.js",
+    "fetch-watch": "nodemon bin/fetch.js",
+    "lint": "eslint src/ bin/",
+    "ratel-docs": "node bin/ratel-docs.js",
+    "ratel-docs-watch": "nodemon bin/ratel-docs.js",
+    "reg203-enrich": "node bin/reg203-enrich.js",
+    "reg203-enrich-watch": "nodemon bin/reg203-enrich.js",
+    "gazetteer": "node bin/gazetteer.js",
+    "gazetteer-watch": "nodemon bin/gazetteer.js"
+  },
+  "description": "Public signal sources in Serbia, collected in one place",
+  "nodemonConfig": {
+    "ignore": [
+      "data/*",
+      "lib/*"
+    ]
+  }
+}

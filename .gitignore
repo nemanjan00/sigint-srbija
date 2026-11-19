@@ -1,0 +1,7 @@
+node_modules
+
+# RATEL scraped artifacts (large, regenerate with yarn ratel-docs / yarn fetch)
+lib/
+data/reg203/
+data/*.sqlite*
+

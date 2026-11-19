@@ -1,0 +1,152 @@
+{
+	"Arilje": {
+		"lat": 43.7505484,
+		"lon": 20.1003115,
+		"query": "Arilje",
+		"display_name": "Ариље, Општина Ариље, Златиборски управни округ, Централна Србија, 31230, Србија",
+		"osm": "relation/8063567",
+		"reviewed": false
+	},
+	"Bac": {
+		"lat": 45.3916793,
+		"lon": 19.2368045,
+		"query": "Bac",
+		"display_name": "Бач, Општина Бач, Јужнобачки управни округ, Војводина, 21420, Србија",
+		"osm": "relation/9204039",
+		"reviewed": false
+	},
+	"Beograd": {
+		"lat": 44.8153318,
+		"lon": 20.4456588,
+		"query": "Beograd",
+		"display_name": "Београд, Град Београд, Централна Србија, Србија",
+		"osm": "relation/2728438",
+		"reviewed": false
+	},
+	"Bozac, Ivanjica": null,
+	"Dom kulture, Obrenovac": null,
+	"Gornji Dubic, Trstenik": {
+		"lat": 43.7360857,
+		"lon": 21.0102286,
+		"query": "Gornji Dubic, Trstenik",
+		"display_name": "Горњи Дубич, Општина Трстеник, Расински управни округ, Централна Србија, Србија",
+		"osm": "relation/8728671",
+		"reviewed": false
+	},
+	"Ivanjica": {
+		"lat": 43.5816675,
+		"lon": 20.2304548,
+		"query": "Ivanjica",
+		"display_name": "Ивањица, Општина Ивањица, Моравички управни округ, Централна Србија, 32250, Србија",
+		"osm": "relation/8075358",
+		"reviewed": false
+	},
+	"Klokoč, Arilje": {
+		"lat": 43.7432829,
+		"lon": 20.0728969,
+		"query": "Klokoč, Arilje",
+		"display_name": "Klokoč, Изворска, Поглед, Општина Ариље, Златиборски управни округ, Централна Србија, 31230, Србија",
+		"osm": "node/5187340597",
+		"reviewed": false
+	},
+	"Kos. Mitrovica, Kosovska Mitrovica": null,
+	"Kosovska Mitrovica": {
+		"lat": 42.8790424,
+		"lon": 20.8657862,
+		"query": "Kosovska Mitrovica",
+		"display_name": "Mitrovicë, Komuna e Mitrovicës / Opština Kosovska Mitrovica, Rajoni i Mitrovicës / Kosovskomitrovački okrug, 40000, Kosova / Kosovo",
+		"osm": "node/1640485042",
+		"reviewed": false
+	},
+	"Kosutnjak, Beograd": {
+		"lat": 44.7667539,
+		"lon": 20.4326687,
+		"query": "Kosutnjak, Beograd",
+		"display_name": "Кошутњак, Градска општина Чукарица, Град Београд, Централна Србија, Србија",
+		"osm": "relation/6694460",
+		"reviewed": false
+	},
+	"Kraljevo": {
+		"lat": 43.7234519,
+		"lon": 20.6870792,
+		"query": "Kraljevo",
+		"display_name": "Краљево, Град Краљево, Рашки управни округ, Централна Србија, Србија",
+		"osm": "relation/8052624",
+		"reviewed": false
+	},
+	"Novi Sad": {
+		"lat": 45.2551338,
+		"lon": 19.8451756,
+		"query": "Novi Sad",
+		"display_name": "Нови Сад, Град Нови Сад, Јужнобачки управни округ, Војводина, Србија",
+		"osm": "relation/9273976",
+		"reviewed": false
+	},
+	"Obrenovac": {
+		"lat": 44.654833,
+		"lon": 20.2014318,
+		"query": "Obrenovac",
+		"display_name": "Обреновац, Градска општина Обреновац, Град Београд, Централна Србија, 11500, Србија",
+		"osm": "relation/8700913",
+		"reviewed": false
+	},
+	"Oficirske kule, Novi Sad": null,
+	"Opšta bolnica, Zrenjanin": {
+		"lat": 45.3740341,
+		"lon": 20.3786084,
+		"query": "Opšta bolnica, Zrenjanin",
+		"display_name": "Општа болница „Ђорђе Јоановић”, 5, Др Васе Савића, МЗ Берберско-болница, Зрењанин, Град Зрењанин, Средњобанатски управни округ, Војводина, 23000, Србија",
+		"osm": "way/418275689",
+		"reviewed": false
+	},
+	"Paraćin": {
+		"lat": 43.8636301,
+		"lon": 21.4099615,
+		"query": "Paraćin",
+		"display_name": "Параћин, Општина Параћин, Поморавски управни округ, Централна Србија, Србија",
+		"osm": "relation/6331451",
+		"reviewed": false
+	},
+	"Selo Plana, Paraćin": null,
+	"Strmna Gora, Valjevo": {
+		"lat": 44.2410745,
+		"lon": 19.8415908,
+		"query": "Strmna Gora, Valjevo",
+		"display_name": "Стрмна Гора, Град Ваљево, Колубарски управни округ, Централна Србија, Србија",
+		"osm": "relation/8655486",
+		"reviewed": false
+	},
+	"Trstenik": {
+		"lat": 43.620214,
+		"lon": 20.9984448,
+		"query": "Trstenik",
+		"display_name": "Трстеник, Општина Трстеник, Расински управни округ, Централна Србија, 37240, Србија",
+		"osm": "relation/8722923",
+		"reviewed": false
+	},
+	"Ugrinovci": {
+		"lat": 44.1715584,
+		"lon": 20.3892927,
+		"query": "Ugrinovci",
+		"display_name": "Угриновци, Општина Горњи Милановац, Моравички управни округ, Централна Србија, Србија",
+		"osm": "relation/8774604",
+		"reviewed": false
+	},
+	"Valjevo": {
+		"lat": 44.2708719,
+		"lon": 19.8863297,
+		"query": "Valjevo",
+		"display_name": "Ваљево, Град Ваљево, Колубарски управни округ, Централна Србија, Србија",
+		"osm": "relation/8655212",
+		"reviewed": false
+	},
+	"Zrenjanin": {
+		"lat": 45.3802683,
+		"lon": 20.3907614,
+		"query": "Zrenjanin",
+		"display_name": "Зрењанин, Град Зрењанин, Средњобанатски управни округ, Војводина, Србија",
+		"osm": "relation/9853233",
+		"reviewed": false
+	},
+	"Ćirin Breg, Trstenik": null
+}
