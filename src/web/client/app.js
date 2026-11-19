@@ -33,7 +33,8 @@ const KINDS = {
 	broadcast: { label: "Broadcast", color: "#f43f5e" },
 	cell: { label: "Cell sites", color: "#34d399" },
 	link: { label: "Wi-Fi & links", color: "#94a3b8" },
-	mesh: { label: "Mesh (LoRa)", color: "#fb923c" }
+	mesh: { label: "Mesh (LoRa)", color: "#fb923c" },
+	cb: { label: "CB radio", color: "#facc15" }
 };
 // Kinds of the amateur / community sources (SRS, BrandMeister, mesh); the rest are RATEL registers
 const AMATEUR_KINDS = ["repeater", "digipeater", "beacon", "mesh"];
@@ -46,6 +47,7 @@ const SOURCES = {
 	"ratel-reg204": { label: "RATEL broadcast", color: "#f43f5e" },
 	"ratel-reg221": { label: "RATEL cell sites", color: "#34d399" },
 	"ratel-reg215": { label: "RATEL Wi-Fi & links", color: "#94a3b8" },
+	"ratel-reg215-cb": { label: "RATEL CB radio", color: "#facc15" },
 	"jugomesh": { label: "Jugomesh", color: "#fb923c" }
 };
 
@@ -1223,6 +1225,14 @@ const CORRECTION_LABELS = {
 const coordinateSourceLabel = (row) => {
 	if (row.coord_source === "source") {
 		return "published by source";
+	}
+
+	if (row.coord_source === "source:geocoded:address") {
+		return "geocoded from the registered address (OpenStreetMap)";
+	}
+
+	if (row.coord_source === "source:geocoded:place") {
+		return "geocoded from the registered place (OpenStreetMap), street not found";
 	}
 
 	if (row.coord_source && row.coord_source.startsWith("source:corrected:")) {

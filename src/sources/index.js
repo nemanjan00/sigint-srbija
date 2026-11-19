@@ -13,6 +13,7 @@ const SOURCES = [
 	require("./ratel-reg204"),
 	require("./ratel-reg221"),
 	require("./ratel-reg215"),
+	require("./ratel-reg215-cb"),
 	require("./jugomesh")
 ];
 

@@ -57,7 +57,7 @@ const STATION_TYPES = {
 	NL: { hear: "Maritime navigation beacon", prefer: ["navigation"] },
 	SM: { hear: "Meteorological aids station", prefer: ["radiosonde"] }
 };
-const OWN_BANDWIDTH_KINDS = ["broadcast", "cell", "link", "mesh"];
+const OWN_BANDWIDTH_KINDS = ["broadcast", "cell", "link", "mesh", "cb"];
 // Band plan hints shown for a licence (the full list of uses is shown anyway)
 const MAX_PLAN_HINTS = 2;
 
@@ -72,6 +72,10 @@ const fromEmitter = (emitter) => {
 		}
 
 		return { hear: "FM broadcast radio: wideband FM stereo, station name and text on RDS", bandwidthHz: 200000, technology: "FM broadcast" };
+	}
+
+	if (emitter.kind === "cb") {
+		return { hear: "CB radio (27 MHz, 40 channels, " + (emitter.mode || "AM / FM") + "): voice, channel 9 = emergency, 19 = road traffic — any CB set or a receiver in AM/FM", bandwidthHz: 10000, technology: "CB" };
 	}
 
 	if (emitter.kind === "mesh") {

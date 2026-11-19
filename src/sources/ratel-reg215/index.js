@@ -5,7 +5,7 @@
 //              tx_hz..tx_high_hz = the registered band, raw.bandwidth_mhz = channel width
 //   type 2000  E-band (71-86 GHz) point-to-point links; one emitter per end,
 //              tx_hz = that end's transmit frequency, raw.partner = the other end
-//   type 3000  low-power stations without coordinates: not imported
+//   type 3000  CB radio stations (27 MHz): no coordinates, separate source ratel-reg215-cb
 // Applicants are often private persons: their name, address, phone, fax,
 // e-mail, tax number, SSID and MAC are never stored (MAC only feeds the key
 // hash). Operator and site name are kept for the mobile network operators only.
