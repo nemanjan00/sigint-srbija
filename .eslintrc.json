@@ -1,5 +1,8 @@
 {
 	"root": true,
+	"ignorePatterns": [
+		"src/web/dist/"
+	],
 	"parser": "@babel/eslint-parser",
 	"parserOptions": {
 		"requireConfigFile": false,
@@ -37,7 +40,7 @@
 	"overrides": [
 		{
 			"files": [
-				"src/web/public/**/*.js"
+				"src/web/client/**/*.js"
 			],
 			"parserOptions": {
 				"sourceType": "module",

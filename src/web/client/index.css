@@ -1,0 +1,11 @@
+/* Stylesheet entry, built by bin/build.js (Tailwind CLI) into src/web/dist/app.css */
+@import "tailwindcss" source(none);
+@import "tw-animate-css";
+@import "@nemanjan00/qrp-shadcdn/theme.css";
+@import "maplibre-gl/dist/maplibre-gl.css";
+@import "./app.css";
+
+/* Class names live in this folder and in the qrp-shadcdn components */
+@source "./";
+@source "../../../node_modules/@nemanjan00/qrp-shadcdn/components";
+@source "../../../node_modules/@nemanjan00/qrp-shadcdn/utils";

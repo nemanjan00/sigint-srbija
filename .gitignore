@@ -5,3 +5,6 @@ lib/
 data/reg203/
 data/*.sqlite*
 
+
+# built map page (yarn build)
+src/web/dist/

@@ -6,7 +6,8 @@ const emitters = require("./emitters");
 const mcp = require("../mcp");
 const bandplan = require("../bandplan");
 
-const PUBLIC_DIR = path.join(__dirname, "public");
+// Built page (yarn build: src/web/client -> src/web/dist)
+const PUBLIC_DIR = path.join(__dirname, "dist");
 
 const app = express();
 

@@ -45,6 +45,7 @@ Needs Node.js 22.13+ (built-in `node:sqlite`) and yarn.
 yarn install
 yarn fetch              # all sources -> data/sigint.sqlite (~25 s, downloads ~100 MB)
 yarn reg203-enrich      # optional: extra licence fields from ~8k RATEL pages (~15 min)
+yarn build              # bundle the map page (esbuild + Tailwind) into src/web/dist
 PORT=3300 yarn web      # map on http://localhost:3300
 ```
 
@@ -55,6 +56,7 @@ PORT=3300 yarn web      # map on http://localhost:3300
 | `yarn gazetteer` | geocode site names that still have no position (OpenStreetMap Nominatim, 1 req/s) into `data/gazetteer.json` — review the result, wrong matches happen |
 | `yarn bandplan [pdf]` | parse RATEL's band plan table (PDF, needs `pdftotext`) into `data/bandplan.json` |
 | `yarn ratel-docs [slug ...]` | mirror RATEL documents into `lib/` (`--tree` to only list pages) |
+| `yarn build` / `yarn build-watch` | bundle the map page (`src/web/client` → `src/web/dist`: esbuild, Tailwind CLI) |
 | `yarn web` / `yarn watch` | map server + MCP (forever / nodemon) |
 | `yarn cron` | scheduled update: `fetch` + `reg203-enrich` every night at 04:00 Europe/Belgrade (`UPDATE_SCHEDULE`, `UPDATE_TIMEZONE`, `UPDATE_ON_START=1`) |
 | `yarn lint` | ESLint |
@@ -154,7 +156,7 @@ src/bandplan/       national band plan: PDF parser, English names, listening hin
 src/reg203/         RATEL register: parser, detail tables, sector guessing
 src/ratel-docs/     RATEL document mirror
 src/services/       HTTP clients (RATEL, BrandMeister, Nominatim)
-src/web/            map server, API and the page (MapLibre + qrp-shadcdn, no build step)
+src/web/            map server and API; client/ = the page (MapLibre + qrp-shadcdn), built into dist/
 src/utils/          parsers and helpers (frequency, datum, Maidenhead, boundary, …)
 ```
 

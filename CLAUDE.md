@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Collects public signal sources in Serbia (repeaters, beacons, licences, ...) into one SQLite database and shows them on a map. README.md has the user-facing overview.
 
-- Always use the /implement-js skill when writing JS here (CommonJS on the server, ES modules only in `src/web/public/`).
+- Always use the /implement-js skill when writing JS here (CommonJS on the server, ES modules only in `src/web/client/`).
 
 ## Commands
 
@@ -15,8 +15,9 @@ Collects public signal sources in Serbia (repeaters, beacons, licences, ...) int
 - `yarn gazetteer [--retry-missing]` — geocode unresolved site names (Nominatim, 1 req/s).
 - `yarn bandplan [pdf]` — parse the band plan PDF into `data/bandplan.json` (tracked; needs poppler `pdftotext`). Default PDF path is the `lib/` mirror (`yarn ratel-docs regulativa-elektronske-komunikacije`).
 - `yarn ratel-docs [--tree] [slug ...]` — RATEL document mirror into `lib/`.
+- `yarn build` / `yarn build-watch` — build the page (`bin/build.js`): esbuild bundles `src/web/client/app.js` (+ qrp-shadcdn, maplibre-gl from node_modules) and the Tailwind CLI builds `client/index.css` into `src/web/dist/` (gitignored, served by express). Run it before `yarn web`; the Docker image builds it.
 - `PORT=3300 yarn web` (forever) / `yarn watch` (nodemon) — map server.
-- `yarn lint` — ESLint (eslint 8, `.eslintrc.json`; `src/web/public` linted as browser ES modules). `npx eslint --fix <file>` fixes indentation.
+- `yarn lint` — ESLint (eslint 8, `.eslintrc.json`; `src/web/client` linted as browser ES modules, `src/web/dist` ignored). `npx eslint --fix <file>` fixes indentation.
 - No test suite. Verify data changes with sqlite3 queries against `data/sigint.sqlite`, UI changes in headless Chromium (see Web UI).
 - `SIGINT_DB=/path/to.sqlite` points every command at another database (e.g. a scratch rebuild).
 - The DB is fully rebuildable with `yarn fetch && yarn reg203-enrich` (current data only — sources are live, past states are not reproducible).
@@ -43,14 +44,14 @@ Collects public signal sources in Serbia (repeaters, beacons, licences, ...) int
 Default port 3000 is taken on the dev machine; use `PORT=3300`.
 
 - `src/index.js` → `src/web` (express): `GET /api/map` = all emitters with coordinates as compact arrays (cached until `sources.fetched_at` changes), `GET /api/emitters/:id` = full row + reg203 detail and the licence's other assignments.
-- `src/web/public/` — static page, no build: MapLibre GL **5.x** UMD (6.x is ESM-only), CARTO dark-matter basemap (label fonts must be ones it serves, e.g. "Montserrat SemiBold"), UI from **qrp-shadcdn** (the user's shadcn port on qrp, CDN `+esm` bundle; Tailwind browser build + its `tailwind-theme.js`). Import qrp core (`state`, `el`, `when`, …) from the same bundle URL — never a second qrp copy.
+- `src/web/client/` — page sources, bundled into `src/web/dist/` by `yarn build` (no CDN scripts: CDN imports are for prototypes only). MapLibre GL **5.x** (npm `maplibre-gl`), CARTO dark-matter basemap (label fonts must be ones it serves, e.g. "Montserrat SemiBold"), UI from **qrp-shadcdn** (the user's shadcn port on qrp, npm `@nemanjan00/qrp-shadcdn`, peer `@nemanjan00/qrp`). Import qrp core (`state`, `el`, `when`, `onDispose`, …) from `@nemanjan00/qrp-shadcdn` too, so there is one qrp copy. CSS: `client/index.css` (Tailwind v4 + tw-animate-css + qrp-shadcdn `theme.css` + maplibre CSS + `app.css`); Tailwind scans `client/` and the qrp-shadcdn components (`@source`). Class names must appear literally in those files.
 - All filtering is client-side over ~74k points; search folds Cyrillic → Latin and strips diacritics. Clusters: amber = licences, cyan = all-amateur, cyan glow = contains amateur; clicking a small cluster or any cluster at zoom ≥ 12 lists its emitters.
 - Shareable URLs (History API): `/e/<source>/<source_key>` = open emitter (server serves index.html for `/e/*`, client resolves via `GET /api/emitter?source=&key=`); query string = non-default filters (`q, kind, src, band, min, max, type, svc, sector, owner, active, precise`) + map view `map=zoom/lat/lon`. **No `#` fragments** (user wants plain HTML5 URLs). Opening an emitter pushes history; filters/moves replaceState. **Links depend on `source_key` being stable across re-fetches** — never use row ids (reg203 key = licence number + `~` + sha1 of the assignment's content).
-- qrp-shadcdn is pinned in `index.html` + `app.js` (currently 0.4.1 → qrp 0.15.0); bump both together. Use qrp's `onChange(source, cb)` instead of `effect` + `untracked`.
+- qrp-shadcdn 0.4.1 → qrp 0.15.0 (package.json; bump qrp with it, it's a peer dependency). Use qrp's `onChange(source, cb)` instead of `effect` + `untracked`.
 - Responsive: below 768 px the filter panel and details are bottom sheets under a top bar (search + Filters button); bigger tap radius on touch devices. Check both a desktop and a phone viewport (390×844, touch) when changing layout.
 - `window.sigintMap` exposes the map for debugging; verify UI changes in a real browser (headless Chromium + puppeteer-core works with `--use-angle=swiftshader`).
 
-## RF panorama (`src/web/public/panorama.js`)
+## RF panorama (`src/web/client/panorama.js`)
 
 Sites (map rows within the radius, grouped by position, filters apply) around an observer: 360° horizon strip (canvas; x = bearing, y = nearness, drag = turn, wheel = field of view; phones start at 120°) + north-up radar (sqrt distance). Opened by "Panorama from here" (detail), map right-click, "Around me" (geolocation; then not put in the URL), URL `?pano=lat,lon,km`. AR: rear camera (`getUserMedia`) under the strip, heading from `deviceorientationabsolute` (alpha) or iOS `webkitCompassHeading`, tilt from beta, GPS via `watchPosition` when the observer is the user. AR is full screen (Fullscreen API requested in the tap, before permission prompts) with a floating toolbar and a filter sheet bound to the map's own filter state (kind, band, radius). iOS needs `DeviceOrientationEvent.requestPermission()` from a tap; without sensor access AR still runs and the view is dragged. Needs HTTPS. Test in headless Chromium with `--use-fake-device-for-media-stream`, `page.setGeolocation` and a dispatched `DeviceOrientationEvent`.
 
@@ -86,7 +87,7 @@ RATEL "Plan namene RF opsega — Tabela 1" (PDF, Dec 2025), parsed from `pdftote
 - `english` — ITU service names, a dictionary of every application (add new ones when the PDF changes: check `english.application()` returns non-null for all), user groups from the condition (police/MUP, military, emergency, BIA). Conditions stay in Serbian.
 - `hints` — "likely to hear" + typical bandwidth: the source's own mode wins (DMR/FM/APRS/beacon); licences use band-plan applications at the frequency ordered by reg203 station type (`STATION_TYPES.prefer`). A licensed TX range is used as the exact bandwidth.
 - `src/web/spectrum` adds `spectrum` (band entry, hints, bandwidth) to `GET /api/emitters/:id`; `GET /api/bandplan` serves the whole plan translated (`bandplan.getPlan()`, ~45 kB gzipped). MCP: `band_plan` tool, `get_emitter.spectrum`.
-- Spectrum explorer `src/web/public/spectrum.js` (canvas, no deps): log-frequency axis 3 kHz–3 THz, lanes = band allocations (colour by first primary service, `CATEGORIES`), reserved sub-bands (user groups), wide blocks (TX range ≥ 2 MHz: cell bands, RLAN bands), signals (map rows grouped by centre + width, bandwidth estimated by `signalWidth`), ruler. Wheel/pinch zoom, drag pan, click band = fit, click signal = open + fly. One instance is moved into each detail panel; a second one is the full-screen overlay (header "Spectrum" button / "Expand"), view in the URL as `?spectrum=lowMHz,highMHz`. Signals = what the map shows (`data.visible`, filters apply); main listings without a frequency borrow one from a duplicate.
+- Spectrum explorer `src/web/client/spectrum.js` (canvas, no deps): log-frequency axis 3 kHz–3 THz, lanes = band allocations (colour by first primary service, `CATEGORIES`), reserved sub-bands (user groups), wide blocks (TX range ≥ 2 MHz: cell bands, RLAN bands), signals (map rows grouped by centre + width, bandwidth estimated by `signalWidth`), ruler. Wheel/pinch zoom, drag pan, click band = fit, click signal = open + fly. One instance is moved into each detail panel; a second one is the full-screen overlay (header "Spectrum" button / "Expand"), view in the URL as `?spectrum=lowMHz,highMHz`. Signals = what the map shows (`data.visible`, filters apply); main listings without a frequency borrow one from a duplicate.
 
 ## Licence holder sector
 

@@ -5,11 +5,10 @@ import {
 	Combobox, ComboboxChips, ComboboxValue, ComboboxChip, ComboboxChipsInput, ComboboxContent, ComboboxEmpty, ComboboxList, ComboboxItem,
 	Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 	SearchIcon, XIcon, ArrowLeftIcon, ChevronRightIcon
-} from "https://cdn.jsdelivr.net/npm/@nemanjan00/qrp-shadcdn@0.4.1/dist/qrp-shadcdn.js/+esm";
-import { createSpectrum, formatHz, CATEGORY_LEGEND } from "/spectrum.js";
-import { createPanorama } from "/panorama.js";
-
-const maplibregl = window.maplibregl;
+} from "@nemanjan00/qrp-shadcdn";
+import maplibregl from "maplibre-gl";
+import { createSpectrum, formatHz, CATEGORY_LEGEND } from "./spectrum.js";
+import { createPanorama } from "./panorama.js";
 
 const BASEMAP = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 const INITIAL_BOUNDS = [[18.8, 41.85], [23.0, 46.2]];

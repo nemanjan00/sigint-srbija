@@ -12,10 +12,13 @@ ENV NODE_ENV=production \
 WORKDIR /app
 
 COPY package.json yarn.lock ./
-# Node >= 25 images ship without yarn
-RUN npm install -g yarn@1 && yarn install --frozen-lockfile --production && yarn cache clean
+# Node >= 25 images ship without yarn. Dev dependencies (esbuild, Tailwind)
+# are only needed for the page build and are pruned after it.
+RUN npm install -g yarn@1 && yarn install --frozen-lockfile --production=false
 
 COPY . .
+
+RUN yarn build && yarn install --frozen-lockfile --production && yarn cache clean
 
 EXPOSE 3000
 VOLUME ["/data/sigint"]
