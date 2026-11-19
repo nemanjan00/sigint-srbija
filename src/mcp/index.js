@@ -6,6 +6,7 @@ const z = require("zod");
 const search = require("../search");
 const emitters = require("../web/emitters");
 const sector = require("../reg203/sector");
+const bandplan = require("../bandplan");
 
 const SERVER_NAME = "sigint-srbija";
 const SERVER_VERSION = require("../../package.json").version;
@@ -16,13 +17,41 @@ const INSTRUCTIONS = `Public radio signal sources in Serbia: amateur repeaters, 
 - Police and military are not in the public register. There is no modulation / emission class data.
 - sector and owner of licences are guessed from the holder's name.
 - Text search matches substrings of folded text (Cyrillic and Latin both work, no diacritics needed). Serbian words are inflected, so search by stem: "hitn" finds "hitna" and "hitnu".
-- Every result has a url to open it on the map; share those with the user.`;
+- Every result has a url to open it on the map; share those with the user.
+- band_plan tells what a frequency is allocated to in Serbia (RATEL band plan: services, applications, who may use it, licensing) and what you are likely to hear there; get_emitter includes the same for the emitter's frequency.`;
 
 const KINDS = ["repeater", "digipeater", "beacon", "licence"];
 const SOURCES = ["yu1srs-repeaters", "yu1srs-map", "brandmeister", "ratel-reg203"];
 const SECTORS = sector.getSectors().map((item) => {
 	return item.id;
 }).concat(["amateur"]);
+
+// Band plan entry in the shape tools return (uses that apply at the frequency, unless all)
+const bandSummary = (band, all) => {
+	if (!band) {
+		return null;
+	}
+
+	return {
+		band: band.label,
+		services: band.services.map((service) => {
+			return service.en + (service.primary ? " (primary)" : " (secondary)");
+		}),
+		uses: band.uses.filter((use) => {
+			return all || (use.here && !use.background);
+		}).map((use) => {
+			return withoutEmpty({
+				application: use.en || use.application,
+				application_sr: use.application,
+				condition_sr: use.condition,
+				reserved_for: use.users.length ? use.users : null,
+				licensing: use.licensing_en.length ? use.licensing_en.join(" / ") : null,
+				applies_here: all ? use.here : null
+			});
+		}),
+		footnotes: band.footnotes
+	};
+};
 
 const emitterPath = (source, key) => {
 	return "/e/" + encodeURIComponent(source) + "/" + key.split("/").map(encodeURIComponent).join("/");
@@ -222,7 +251,39 @@ const createServer = (baseUrl) => {
 			return errorResult("No emitter " + source + " / " + key);
 		}
 
-		return jsonResult(Object.assign({ url: baseUrl + emitterPath(source, key) }, emitter));
+		const spectrum = emitter.spectrum;
+		const onAir = spectrum ? withoutEmpty({
+			likely_to_hear: spectrum.hints,
+			bandwidth_khz: spectrum.bandwidth ? spectrum.bandwidth.hz / 1e3 : null,
+			bandwidth_basis: spectrum.bandwidth ? spectrum.bandwidth.how : null,
+			band_plan: bandSummary(spectrum.band, false)
+		}) : null;
+
+		return jsonResult(Object.assign({ url: baseUrl + emitterPath(source, key) }, emitter, { spectrum: onAir }));
+	});
+
+	server.registerTool("band_plan", {
+		title: "Band plan for a frequency",
+		description: "What a frequency is allocated to in Serbia, from RATEL's national band plan (Plan namene, Table 1): the band, radio services (primary/secondary), applications with conditions, who it is reserved for (e.g. police, military) and how it is licensed, plus what you are likely to hear there. Conditions are in Serbian.",
+		inputSchema: {
+			mhz: z.number().min(0).max(3000000).describe("Frequency in MHz, e.g. 446.1"),
+			all_uses: z.boolean().optional().describe("Also list uses limited to other parts of the band (default false)")
+		},
+		annotations: { readOnlyHint: true, openWorldHint: false }
+	}, (args) => {
+		const hz = Math.round(args.mhz * 1e6);
+		const description = bandplan.describe({ tx_hz: hz, tx_high_hz: null });
+
+		if (!description.band) {
+			return errorResult("No band plan entry for " + args.mhz + " MHz");
+		}
+
+		return jsonResult(withoutEmpty(Object.assign({
+			mhz: args.mhz,
+			likely_to_hear: description.hints,
+			typical_bandwidth_khz: description.bandwidth ? description.bandwidth.hz / 1e3 : null,
+			source: description.plan.title + (description.plan.date ? ", " + description.plan.date : "") + " — " + description.plan.url
+		}, bandSummary(description.band, Boolean(args.all_uses)))));
 	});
 
 	server.registerTool("database_info", {

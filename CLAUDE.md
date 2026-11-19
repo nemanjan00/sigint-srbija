@@ -13,6 +13,7 @@ Collects public signal sources in Serbia (repeaters, beacons, licences, ...) int
 - `yarn fetch [source-id ...]` — fetch sources into `data/sigint.sqlite`, then merge duplicates and resolve coordinates (`src/geo`). ~25 s for all; reg203 downloads ~100 MB.
 - `yarn reg203-enrich [--limit-pages N]` — HTML-only licence fields from ~8k RATEL pages (~15 min). Use `--limit-pages 3` to test.
 - `yarn gazetteer [--retry-missing]` — geocode unresolved site names (Nominatim, 1 req/s).
+- `yarn bandplan [pdf]` — parse the band plan PDF into `data/bandplan.json` (tracked; needs poppler `pdftotext`). Default PDF path is the `lib/` mirror (`yarn ratel-docs regulativa-elektronske-komunikacije`).
 - `yarn ratel-docs [--tree] [slug ...]` — RATEL document mirror into `lib/`.
 - `PORT=3300 yarn web` (forever) / `yarn watch` (nodemon) — map server.
 - `yarn lint` — ESLint (eslint 8, `.eslintrc.json`; `src/web/public` linted as browser ES modules). `npx eslint --fix <file>` fixes indentation.
@@ -51,7 +52,7 @@ Default port 3000 is taken on the dev machine; use `PORT=3300`.
 
 ## MCP (`src/mcp`, POST /mcp)
 
-Public, read-only, stateless Streamable HTTP MCP server on the web app (official `@modelcontextprotocol/sdk`, zod schemas); one server + transport per request. Tools: `search_emitters`, `find_frequency`, `get_emitter`, `database_info`; all results carry the map `url`. Search runs in memory over every emitter (`src/search`, cached per `sources.fetched_at`, folded text). User-facing docs with client setup commands: `docs/mcp.md`. Test with the SDK client (`StreamableHTTPClientTransport`), not by editing the user's MCP config.
+Public, read-only, stateless Streamable HTTP MCP server on the web app (official `@modelcontextprotocol/sdk`, zod schemas); one server + transport per request. Tools: `search_emitters`, `find_frequency`, `get_emitter`, `band_plan`, `database_info`; all results carry the map `url`. Search runs in memory over every emitter (`src/search`, cached per `sources.fetched_at`, folded text). User-facing docs with client setup commands: `docs/mcp.md`. Test with the SDK client (`StreamableHTTPClientTransport`), not by editing the user's MCP config.
 
 ## Storage (global)
 
@@ -73,6 +74,14 @@ Rows with `coord_source = 'source'` got coordinates from their own source. Rows 
 - Licences (reg203) without coordinates are mobile stations and are not resolved.
 - reg203 positions clearly outside Serbia (not within 0.3° of `data/boundary.geojson`, a simplified OSM Serbia + Kosovo outline) are register typos. If exactly one simple fix (lat/lon swap, ±1°, ±10°) lands inside, it is used with `coord_source = 'source:corrected:<fix>'` and the published position kept in `raw.published_position`; otherwise no position. `geo` treats any `source%` coord_source as source-given.
 - reg203 Bessel coordinates are converted to WGS 84 (`src/utils/datum`, EPSG:3906 shift) in emitters; `reg203_assignments` keeps the original datum.
+
+## Band plan (`src/bandplan`, `data/bandplan.json`)
+
+RATEL "Plan namene RF opsega — Tabela 1" (PDF, Dec 2025), parsed from `pdftotext -bbox` word positions: columns sit at fixed x on every page (`COLUMNS` in the parser); the `-layout` text output shifts columns per page, don't parse that. 583 contiguous bands, each with services (capitals = primary), footnotes and uses (application, condition, regulation, standards, licensing ПЗ/ЈН/ПН/ОО, transfer). Sub-ranges in a condition restrict a use only if they overlap the band and don't span it (others are paired-band references / tuning ranges).
+
+- `english` — ITU service names, a dictionary of every application (add new ones when the PDF changes: check `english.application()` returns non-null for all), user groups from the condition (police/MUP, military, emergency, BIA). Conditions stay in Serbian.
+- `hints` — "likely to hear" + typical bandwidth: the source's own mode wins (DMR/FM/APRS/beacon); licences use band-plan applications at the frequency ordered by reg203 station type (`STATION_TYPES.prefer`). A licensed TX range is used as the exact bandwidth.
+- `src/web/spectrum` adds `spectrum` to `GET /api/emitters/:id` (band entry, hints, 120-bin occupancy histogram of the band, neighbouring frequencies in a window of ±10 bandwidths); the detail panel draws the bars as SVG. MCP: `band_plan` tool, `get_emitter.spectrum`.
 
 ## Licence holder sector
 

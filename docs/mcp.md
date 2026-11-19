@@ -75,7 +75,8 @@ curl -s https://sigint.nemanja.top/mcp \
 |---|---|
 | `search_emitters` | Text (callsign, DMR ID, holder, site, city), frequency range (`min_mhz` / `max_mhz`, matches TX or RX), area (`near: {lat, lon, radius_km}`, nearest first) and filters: kind, source, sector, owner, station / service type. |
 | `find_frequency` | Everything transmitting or receiving on `mhz` ± `tolerance_khz` (default 12.5), closest frequency first. For identifying a signal heard on a scanner or SDR. |
-| `get_emitter` | Full record by map `url` or `source` + `key`: source record, other sources' listings of the same station, and for licences the register entry and every assignment on the licence. |
+| `get_emitter` | Full record by map `url` or `source` + `key`: source record, other sources' listings of the same station, and for licences the register entry and every assignment on the licence. Includes `spectrum`: what you are likely to hear, typical bandwidth and the band plan entry for its frequency. |
+| `band_plan` | What a frequency is allocated to in Serbia (RATEL band plan, Table 1): band, services (primary / secondary), applications with conditions, who it is reserved for (police, military, emergency services), licensing, and what you are likely to hear. `all_uses: true` also lists uses limited to other parts of the band. |
 | `database_info` | Sources and fetch times, counts by kind / source / sector, station and service type code tables. |
 
 Every result includes `url`, a link to the item on the map.

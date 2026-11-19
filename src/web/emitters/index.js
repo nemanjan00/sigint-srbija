@@ -1,6 +1,7 @@
 // Read side of the database for the map UI
 const storage = require("../../storage");
 const sector = require("../../reg203/sector");
+const spectrum = require("../spectrum");
 
 // Columns sent to the browser for every point, in this order
 const MAP_COLUMNS = ["id", "lat", "lon", "source", "kind", "mode", "tx_hz", "tx_high_hz", "active", "callsign", "operator", "location", "station_type", "service_type", "sector", "owner", "coord_accuracy_m", "duplicate_of"];
@@ -88,6 +89,8 @@ const getEmitter = (id) => {
 		result.licence = db.prepare(`SELECT id, tx_freq_raw, rx_freq_raw, lokacija, vazeca FROM reg203_assignments
 			WHERE broj_dozvole = ? ORDER BY id LIMIT 200`).all(result.raw.broj_dozvole);
 	}
+
+	result.spectrum = spectrum.getSpectrum(result);
 
 	return result;
 };

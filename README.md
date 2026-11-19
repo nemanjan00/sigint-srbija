@@ -48,6 +48,7 @@ PORT=3300 yarn web      # map on http://localhost:3300
 | `yarn fetch [source ...]` | fetch all (or the named) sources, then merge duplicates and resolve positions. Sources: `yu1srs-repeaters`, `yu1srs-map`, `brandmeister`, `ratel-reg203` |
 | `yarn reg203-enrich` | add holder name/address, inspection and start-of-use dates, full station description to licences |
 | `yarn gazetteer` | geocode site names that still have no position (OpenStreetMap Nominatim, 1 req/s) into `data/gazetteer.json` — review the result, wrong matches happen |
+| `yarn bandplan [pdf]` | parse RATEL's band plan table (PDF, needs `pdftotext`) into `data/bandplan.json` |
 | `yarn ratel-docs [slug ...]` | mirror RATEL documents into `lib/` (`--tree` to only list pages) |
 | `yarn web` / `yarn watch` | map server + MCP (forever / nodemon) |
 | `yarn cron` | scheduled update: `fetch` + `reg203-enrich` every night at 04:00 Europe/Belgrade (`UPDATE_SCHEDULE`, `UPDATE_TIMEZONE`, `UPDATE_ON_START=1`) |
@@ -70,6 +71,12 @@ PORT=3300 yarn web      # map on http://localhost:3300
   ```
 
   Back / Forward step through what you opened; **Share** copies the link.
+- Every emitter shows what you are likely to hear on its frequency (DMR, FM
+  repeater, APRS, airband, land mobile, …) with a typical bandwidth, the
+  national band plan entry for that frequency (services, applications, who it is
+  reserved for — police, military, emergency services — and how it is
+  licensed), a bar of the whole band with its sub-allocations and how busy it
+  is, and a zoomed bar of the neighbouring channels (click one to open it).
 - Works on phones: filters and details become bottom sheets.
 
 API used by the page:
@@ -92,7 +99,8 @@ codex mcp add sigint-srbija --url https://sigint.nemanja.top/mcp               #
 ```
 
 Tools: `search_emitters` (text, frequency range, area, filters),
-`find_frequency` (what's on 145.600?), `get_emitter`, `database_info`.
+`find_frequency` (what's on 145.600?), `get_emitter`, `band_plan` (what a
+frequency is allocated to and what you'd hear), `database_info`.
 Other clients, tool details and example questions: [docs/mcp.md](docs/mcp.md).
 
 ## Database
@@ -116,8 +124,10 @@ SELECT operator, tx_hz / 1e6 AS mhz, location, lat, lon
 ```
 
 Tracked data files: `data/gazetteer.json` (site name → position, hand-correctable;
-set `"reviewed": true` on checked entries) and `data/boundary.geojson`
-(simplified OSM outline of Serbia incl. Kosovo, used to catch bad positions).
+set `"reviewed": true` on checked entries), `data/boundary.geojson`
+(simplified OSM outline of Serbia incl. Kosovo, used to catch bad positions) and
+`data/bandplan.json` (RATEL's band plan, Plan namene RF opsega Table 1, parsed
+by `yarn bandplan`).
 
 ## Layout
 
@@ -126,6 +136,7 @@ bin/                entry points (fetch, reg203-enrich, gazetteer, ratel-docs)
 src/sources/        one module per source -> emitters
 src/storage/        the SQLite database
 src/geo/            duplicate merging + position resolution
+src/bandplan/       national band plan: PDF parser, English names, listening hints
 src/reg203/         RATEL register: parser, detail tables, sector guessing
 src/ratel-docs/     RATEL document mirror
 src/services/       HTTP clients (RATEL, BrandMeister, Nominatim)

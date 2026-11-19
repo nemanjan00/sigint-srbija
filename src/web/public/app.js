@@ -1174,6 +1174,246 @@ const frequencyBlock = (detail) => {
 		shift !== null ? el("div", { class: "text-xs text-muted-foreground" }, "Shift ", el("span", { class: "font-mono text-foreground" }, (shift > 0 ? "+" : "") + shift.toFixed(4).replace(/0+$/, "").replace(/\.$/, "") + " MHz")) : null);
 };
 
+// --- spectrum: band plan, listening hints, band and channel bars -------------
+
+const USER_COLORS = {
+	"Police (MUP)": "#60a5fa",
+	"Emergency services": "#f87171",
+	"Military": "#a3e635",
+	"Security agency (BIA)": "#c084fc",
+	"Anyone": "#94a3b8"
+};
+const SEGMENT_COLOR = "#94a3b8";
+// Share of a channel left empty on each side, so neighbours stay apart
+const CHANNEL_GAP = 0.08;
+// Smallest drawn width of a signal, as a share of the bar
+const MIN_SIGNAL_SHARE = 0.006;
+
+const formatHz = (hz) => {
+	if (hz >= 1e9) {
+		return Number((hz / 1e9).toPrecision(7)) + " GHz";
+	}
+
+	if (hz >= 1e6) {
+		return Number((hz / 1e6).toPrecision(7)) + " MHz";
+	}
+
+	if (hz >= 1e3) {
+		return Number((hz / 1e3).toPrecision(7)) + " kHz";
+	}
+
+	return hz + " Hz";
+};
+
+const svg = (tag, attributes, ...children) => {
+	const node = document.createElementNS(SVG_NS, tag);
+
+	Object.keys(attributes || {}).forEach((name) => {
+		if (name === "onclick") {
+			node.addEventListener("click", attributes[name]);
+		} else if (attributes[name] !== null && attributes[name] !== undefined) {
+			node.setAttribute(name, attributes[name]);
+		}
+	});
+	children.filter(Boolean).forEach((child) => {
+		node.appendChild(child);
+	});
+
+	return node;
+};
+
+const svgTitle = (text) => {
+	const node = document.createElementNS(SVG_NS, "title");
+	node.textContent = text;
+	return node;
+};
+
+const segmentColor = (use) => {
+	return USER_COLORS[use.users[0]] || SEGMENT_COLOR;
+};
+
+const useName = (use) => {
+	return use.en || use.application || "Unspecified";
+};
+
+// Axis labels under a bar: low, middle, high
+const axis = (low, middle, high) => {
+	return el("div", { class: "flex justify-between gap-2 font-mono text-[10px] text-muted-foreground" },
+		el("span", {}, low), el("span", { class: "truncate text-center text-foreground/80" }, middle), el("span", {}, high));
+};
+
+/**
+ * Bar over [low, high] Hz, drawn in a 1000-wide viewBox stretched to the panel.
+ * x() maps Hz to the viewBox; widths never drop under MIN_SIGNAL_SHARE.
+ */
+const scale = (low, high) => {
+	const x = (hz) => {
+		return Math.min(1000, Math.max(0, (hz - low) / (high - low) * 1000));
+	};
+	const span = (from, to) => {
+		const width = Math.max(x(to) - x(from), MIN_SIGNAL_SHARE * 1000);
+		const centre = (x(from) + x(to)) / 2;
+		return { x: Math.max(0, centre - width / 2), width: width };
+	};
+	return { x: x, span: span };
+};
+
+// Whole band: sub-allocations (coloured by user group), how many emitters we know per slice, this emitter
+const bandBar = (detail, spectrum) => {
+	const band = spectrum.band;
+	const bar = scale(band.low_hz, band.high_hz);
+	const height = 48;
+	const peak = Math.max(1, ...spectrum.overview);
+	const sliceWidth = 1000 / spectrum.overview.length;
+	const bandwidth = spectrum.bandwidth ? spectrum.bandwidth.hz : 0;
+	const centre = detail.tx_high_hz ? (detail.tx_hz + detail.tx_high_hz) / 2 : detail.tx_hz;
+	const me = bar.span(centre - bandwidth / 2, centre + bandwidth / 2);
+	const segments = band.uses.filter((use) => {
+		return use.ranges.length > 0 && !use.background;
+	});
+
+	return el("div", { class: "grid gap-1" },
+		svg("svg", { viewBox: "0 0 1000 " + height, preserveAspectRatio: "none", class: "h-12 w-full overflow-visible rounded-md" },
+			svg("rect", { x: 0, y: 0, width: 1000, height: height, fill: "rgb(255 255 255 / 0.04)" }),
+			...segments.reduce((result, use) => {
+				return result.concat(use.ranges.map((range) => {
+					const box = bar.span(range.low_hz, range.high_hz);
+					return svg("rect", { x: box.x, y: 0, width: box.width, height: height, fill: segmentColor(use), "fill-opacity": use.here ? 0.22 : 0.1 },
+						svgTitle(useName(use) + (use.users.length ? " — " + use.users.join(", ") : "") + "\n" + formatHz(range.low_hz) + " – " + formatHz(range.high_hz)));
+				}));
+			}, []),
+			...spectrum.overview.map((count, index) => {
+				const barHeight = count ? 4 + Math.log(1 + count) / Math.log(1 + peak) * (height - 8) : 0;
+				return count ? svg("rect", { x: index * sliceWidth + sliceWidth * 0.15, y: height - barHeight, width: sliceWidth * 0.7, height: barHeight, fill: "rgb(226 232 240 / 0.45)" },
+					svgTitle(formatNumber(count) + " known transmitters\n" + formatHz(band.low_hz + index * (band.high_hz - band.low_hz) / spectrum.overview.length))) : null;
+			}),
+			detail.rx_hz && detail.rx_hz !== detail.tx_hz && detail.rx_hz >= band.low_hz && detail.rx_hz < band.high_hz ?
+				svg("line", { x1: bar.x(detail.rx_hz), x2: bar.x(detail.rx_hz), y1: 0, y2: height, stroke: "var(--primary)", "stroke-width": 1.5, "stroke-dasharray": "3 3", "vector-effect": "non-scaling-stroke" }, svgTitle("RX (input) " + formatMhz(detail.rx_hz) + " MHz")) : null,
+			svg("rect", { x: me.x, y: 0, width: me.width, height: height, fill: "var(--primary)", class: "drop-shadow-[0_0_6px_var(--primary)]" }, svgTitle("This emitter, TX " + formatRange(detail.tx_hz, detail.tx_high_hz) + " MHz"))),
+		axis(formatHz(band.low_hz), "", formatHz(band.high_hz)),
+		segments.length ? el("div", { class: "flex flex-wrap gap-x-3 gap-y-1 pt-1 text-[11px] text-muted-foreground" },
+			...segments.map((use) => {
+				return el("span", { class: "flex items-center gap-1.5" + (use.here ? " text-foreground/90" : "") },
+					el("span", { class: "size-2 flex-none rounded-sm", style: "background:" + segmentColor(use) }),
+					useName(use) + (use.users.length ? " · " + use.users.join(", ") : "") + " ",
+					el("span", { class: "font-mono" }, use.ranges.map((range) => {
+						return formatMhz(range.low_hz) + "–" + formatMhz(range.high_hz);
+					}).join(", ")));
+			})) : null);
+};
+
+// Zoomed window around the emitter: every known frequency, height = how many use it
+const channelBar = (detail, spectrum) => {
+	const window = spectrum.window;
+	const bar = scale(window.low_hz, window.high_hz);
+	const height = 56;
+	const bandwidth = spectrum.bandwidth ? spectrum.bandwidth.hz : 0;
+	const peak = Math.max(1, ...window.signals.map((signal) => {
+		return signal.count;
+	}));
+
+	return el("div", { class: "grid gap-1" },
+		svg("svg", { viewBox: "0 0 1000 " + height, preserveAspectRatio: "none", class: "h-14 w-full overflow-visible rounded-md" },
+			svg("rect", { x: 0, y: 0, width: 1000, height: height, fill: "rgb(255 255 255 / 0.04)" }),
+			svg("line", { x1: 500, x2: 500, y1: 0, y2: height, stroke: "rgb(255 255 255 / 0.12)", "vector-effect": "non-scaling-stroke" }),
+			...window.signals.map((signal) => {
+				const self = signal.tx_hz === detail.tx_hz;
+				const low = signal.tx_high_hz > signal.tx_hz ? signal.tx_hz : signal.tx_hz - bandwidth / 2;
+				const high = signal.tx_high_hz > signal.tx_hz ? signal.tx_high_hz : signal.tx_hz + bandwidth / 2;
+				const box = bar.span(low + (high - low) * CHANNEL_GAP, high - (high - low) * CHANNEL_GAP);
+				const barHeight = self ? height : 10 + Math.log(1 + signal.count) / Math.log(1 + peak) * (height - 18);
+				const color = self ? "var(--primary)" : (signal.amateur ? KINDS.repeater.color : KINDS.licence.color);
+				const clickable = !self && signal.id !== null;
+				const label = formatMhz(signal.tx_hz) + " MHz · " + (signal.label || "unnamed") + (signal.count > 1 ? " +" + (signal.count - 1) + " more" : "") + (signal.id === null ? " (mobile, no position)" : "");
+
+				return svg("rect", {
+					x: box.x,
+					y: height - barHeight,
+					width: box.width,
+					height: barHeight,
+					rx: 1.5,
+					fill: color,
+					"fill-opacity": self ? 1 : 0.55,
+					class: clickable ? "cursor-pointer hover:fill-opacity-100" : null,
+					onclick: clickable ? () => {
+						loadDetail(signal.id);
+					} : null
+				}, svgTitle(label + (clickable ? "\nClick to open" : "")));
+			})),
+		axis(formatMhz(window.low_hz), formatMhz(detail.tx_hz) + " MHz", formatMhz(window.high_hz)));
+};
+
+const useRow = (use) => {
+	return el("div", { class: "grid gap-1 rounded-lg border border-white/5 bg-black/20 px-3 py-2" },
+		el("div", { class: "flex flex-wrap items-center gap-1.5 text-sm" },
+			el("span", { class: "font-medium" }, useName(use)),
+			...use.users.map((user) => {
+				return badge(user, USER_COLORS[user]);
+			})),
+		use.en && use.application && !fold(use.en).startsWith(fold(use.application)) ? el("span", { class: "text-[11px] text-muted-foreground" }, use.application) : null,
+		use.condition ? el("span", { class: "text-xs text-muted-foreground" }, use.condition) : null,
+		use.licensing_en.length ? el("span", { class: "text-[11px] text-muted-foreground" }, use.licensing_en.join(" / ")) : null);
+};
+
+const SubHeading = (text) => {
+	return el("div", { class: "text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground" }, text);
+};
+
+const spectrumBlock = (detail) => {
+	const spectrum = detail.spectrum;
+
+	if (!spectrum || !spectrum.band) {
+		return null;
+	}
+
+	const band = spectrum.band;
+	const here = band.uses.filter((use) => {
+		return use.here && !use.background;
+	});
+	const elsewhere = band.uses.filter((use) => {
+		return !use.here || use.background;
+	});
+
+	return el("div", { class: "grid gap-4" },
+		spectrum.hints.length ? el("div", { class: "grid gap-1.5" },
+			SubHeading("Likely to hear"),
+			el("ul", { class: "grid gap-1 text-sm" },
+				...spectrum.hints.map((hint, index) => {
+					return el("li", { class: "flex gap-2 " + (index === 0 ? "text-foreground" : "text-muted-foreground") },
+						el("span", { class: "mt-1.5 size-1.5 flex-none rounded-full bg-primary/70" }), hint);
+				})),
+			spectrum.bandwidth ? el("span", { class: "text-xs text-muted-foreground" }, "Bandwidth ",
+				el("span", { class: "font-mono text-foreground" }, (spectrum.bandwidth.how === "licensed block" ? "" : "~") + formatHz(spectrum.bandwidth.hz)),
+				" · " + spectrum.bandwidth.how) : null) : null,
+		el("div", { class: "grid gap-2" },
+			el("div", { class: "flex items-baseline justify-between gap-2" }, SubHeading("Band"), el("span", { class: "font-mono text-xs text-muted-foreground" }, band.label)),
+			bandBar(detail, spectrum),
+			el("div", { class: "flex flex-wrap gap-1.5" },
+				...band.services.map((service) => {
+					return Badge({
+						variant: "outline",
+						class: "rounded-full border-white/10 font-normal " + (service.primary ? "bg-white/10 text-foreground" : "bg-transparent text-muted-foreground"),
+						title: service.name + (service.primary ? " (primary)" : " (secondary)")
+					}, service.primary ? service.en.toUpperCase() : service.en.charAt(0).toUpperCase() + service.en.slice(1));
+				}))),
+		el("div", { class: "grid gap-2" },
+			SubHeading("Nearby channels"),
+			channelBar(detail, spectrum),
+			el("span", { class: "text-[11px] text-muted-foreground" }, "Bar height = how many transmitters use that frequency. Click one to open it.")),
+		el("div", { class: "grid gap-1.5" },
+			SubHeading("Band plan at this frequency"),
+			...(here.length ? here.map(useRow) : [el("span", { class: "text-sm text-muted-foreground" }, "No specific use listed")]),
+			elsewhere.length ? el("details", { class: "group grid gap-1.5" },
+				el("summary", { class: "flex cursor-pointer list-none items-center gap-2 py-1 text-xs text-muted-foreground hover:text-foreground" },
+					ChevronRightIcon({ class: "size-3.5 transition-transform group-open:rotate-90" }), "Other uses in this band (" + elsewhere.length + ")"),
+				el("div", { class: "grid gap-1.5 pt-1" }, ...elsewhere.map(useRow))) : null,
+			el("span", { class: "text-[11px] text-muted-foreground" },
+				"Source: ",
+				el("a", { class: "text-primary hover:underline", href: spectrum.plan.url, target: "_blank", rel: "noreferrer" }, "RATEL band plan, Table 1"),
+				spectrum.plan.date ? " (" + spectrum.plan.date + ")" : "",
+				band.footnotes.length ? " · notes " + band.footnotes.join(", ") : "")));
+};
+
 const licenceBlock = (detail) => {
 	const row = detail.detail;
 
@@ -1303,6 +1543,7 @@ const detailView = (detail) => {
 					el("a", { class: "text-[11px] text-primary hover:underline", target: "_blank", rel: "noreferrer", href: "https://www.openstreetmap.org/?mlat=" + detail.lat + "&mlon=" + detail.lon + "#map=15/" + detail.lat + "/" + detail.lon }, "OSM ↗"))) : null,
 			field("Position from", coordinateSourceLabel(detail) + (detail.coord_accuracy_m ? " · ±" + formatNumber(detail.coord_accuracy_m) + " m" : ""))),
 		listingsBlock(detail),
+		spectrumBlock(detail),
 		licenceBlock(detail),
 		rawBlock(detail.raw));
 };

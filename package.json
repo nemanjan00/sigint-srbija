@@ -33,6 +33,8 @@
     "reg203-enrich-watch": "nodemon bin/reg203-enrich.js",
     "gazetteer": "node bin/gazetteer.js",
     "gazetteer-watch": "nodemon bin/gazetteer.js",
+    "bandplan": "node bin/bandplan.js",
+    "bandplan-watch": "nodemon bin/bandplan.js",
     "cron": "forever bin/cron.js",
     "cron-watch": "nodemon bin/cron.js"
   },
