@@ -5,7 +5,7 @@ import {
 	Combobox, ComboboxChips, ComboboxValue, ComboboxChip, ComboboxChipsInput, ComboboxContent, ComboboxEmpty, ComboboxList, ComboboxItem,
 	Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 	SearchIcon, XIcon, ArrowLeftIcon, ChevronRightIcon
-} from "https://cdn.jsdelivr.net/npm/@nemanjan00/qrp-shadcdn@0.4.0/dist/qrp-shadcdn.js/+esm";
+} from "https://cdn.jsdelivr.net/npm/@nemanjan00/qrp-shadcdn@0.4.1/dist/qrp-shadcdn.js/+esm";
 
 const maplibregl = window.maplibregl;
 
