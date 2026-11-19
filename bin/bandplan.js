@@ -10,7 +10,7 @@ const DEFAULT_PDF = path.join(__dirname, "../lib/regulativa-elektronske-komunika
 const OUTPUT = path.join(__dirname, "../data/bandplan.json");
 const SOURCE = {
 	title: "Plan namene radiofrekvencijskih opsega — Tabela 1 (nezvanično prečišćen tekst)",
-	url: "https://www.ratel.rs/sr/regulativa-elektronske-komunikacije/plan-namene-i-planovi-raspodele"
+	url: "https://www.ratel.rs/storage/upload/2025/12/Plan-namene-RF-opsega---Tabela-1---Namena-RF-opsega-u-Republici-Srbiji-(002).pdf"
 };
 const MAX_BUFFER = 256 * 1024 * 1024;
 
