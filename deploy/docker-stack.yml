@@ -1,0 +1,46 @@
+---
+# Docker Swarm stack on root@dmr.nemanja.top (/root/sigint-srbija/docker-stack.yml):
+#   docker stack deploy --with-registry-auth -c docker-stack.yml sigint-srbija
+# The database is copied to /data/sigint/sigint.sqlite on the host (see CLAUDE.md).
+version: '3.5'
+
+services:
+  web:
+    image: ghcr.io/nemanjan00/sigint-srbija:latest
+    environment:
+      - SIGINT_DB=/data/sigint/sigint.sqlite
+    volumes:
+      - /data/sigint:/data/sigint
+    networks:
+      - default
+    deploy:
+      # SQLite: one writer process
+      replicas: 1
+      labels:
+        - "traefik.enable=true"
+
+        - "traefik.docker.lbswarm=true"
+
+        - "traefik.http.services.sigint-srbija.loadbalancer.server.port=3000"
+        - "traefik.http.services.sigint-srbija-http.loadbalancer.server.port=3000"
+
+        - "traefik.http.middlewares.sigint-srbija-https-redirect.redirectscheme.scheme=https"
+        - "traefik.http.middlewares.sigint-srbija-https-redirect.redirectscheme.permanent=true"
+
+        - "traefik.http.routers.sigint-srbija.rule=Host(`sigint.nemanja.top`)"
+        - "traefik.http.routers.sigint-srbija.service=sigint-srbija"
+        - "traefik.http.routers.sigint-srbija.entrypoints=websecure"
+        - "traefik.http.routers.sigint-srbija.tls=true"
+        - "traefik.http.routers.sigint-srbija.tls.certresolver=letsencrypt"
+
+        - "traefik.http.routers.sigint-srbija-http.rule=Host(`sigint.nemanja.top`)"
+        - "traefik.http.routers.sigint-srbija-http.service=sigint-srbija-http"
+        - "traefik.http.routers.sigint-srbija-http.entrypoints=web"
+        - "traefik.http.routers.sigint-srbija-http.middlewares=sigint-srbija-https-redirect@docker"
+      restart_policy:
+        condition: on-failure
+
+networks:
+  default:
+    external: true
+    name: flocksocial

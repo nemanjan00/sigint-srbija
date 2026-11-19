@@ -23,7 +23,7 @@ Collects public signal sources in Serbia (repeaters, beacons, licences, ...) int
 ## Deployment
 
 - `.github/workflows/image.yml` (same shape as ~/meat-proxy) builds `ghcr.io/nemanjan00/sigint-srbija` (`latest` + short sha, amd64/arm64) on every push to main/master; `ci.yml` lints.
-- Runs on `root@dmr.nemanja.top` (Docker Swarm, Traefik on the external `flocksocial` network, like the other stacks there). Stack file: `/root/sigint-srbija/docker-stack.yml`; host `sigint.nemanja.top`.
+- Runs on `root@dmr.nemanja.top` (Docker Swarm, Traefik on the external `flocksocial` network, like the other stacks there). Stack file: `deploy/docker-stack.yml`, copied to `/root/sigint-srbija/docker-stack.yml`, deployed with `docker stack deploy --with-registry-auth -c docker-stack.yml sigint-srbija`; host https://sigint.nemanja.top. The GHCR package is public, so the server pulls without login.
 - The database is not in the image. It is copied to the server and mounted: `/data/sigint/sigint.sqlite` → container `SIGINT_DB=/data/sigint/sigint.sqlite` (directory mount, SQLite needs to write WAL files next to it). One replica (SQLite).
 - Update the data: `sqlite3 data/sigint.sqlite ".backup /tmp/s.sqlite"`, copy it over the server file, then `docker service update --force sigint-srbija_web`.
 - Update the app: push to main, wait for the Image workflow, then `docker service update --image ghcr.io/nemanjan00/sigint-srbija:latest --with-registry-auth sigint-srbija_web` (or re-run `docker stack deploy`).
