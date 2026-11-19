@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS emitters (
 	id                INTEGER PRIMARY KEY,
 	source            TEXT NOT NULL,      -- sources.id
 	source_key        TEXT NOT NULL,      -- stable key within source
-	kind              TEXT,               -- repeater | digipeater | beacon | licence
+	kind              TEXT,               -- repeater | digipeater | beacon | licence | broadcast | cell | link
 	mode              TEXT,               -- FM | DMR | APRS | ... (NULL if unknown)
 	callsign          TEXT,
 	dmr_id            TEXT,

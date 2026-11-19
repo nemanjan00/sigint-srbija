@@ -300,5 +300,6 @@ const open = () => {
 };
 
 module.exports = {
-	open: open
+	open: open,
+	toWgs84: toWgs84
 };

@@ -9,7 +9,10 @@ const SOURCES = [
 	require("./yu1srs-repeaters"),
 	require("./yu1srs-map"),
 	require("./brandmeister"),
-	require("./ratel-reg203")
+	require("./ratel-reg203"),
+	require("./ratel-reg204"),
+	require("./ratel-reg221"),
+	require("./ratel-reg215")
 ];
 
 const getSources = () => {

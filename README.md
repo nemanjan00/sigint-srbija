@@ -1,8 +1,9 @@
 # SIGINT Srbija
 
 Public radio signal sources in Serbia, collected into one database and shown
-on one map: amateur repeaters, APRS digipeaters and beacons, DMR repeaters, and
-every radio licence in RATEL's public register (~161k frequency assignments).
+on one map: amateur repeaters, APRS digipeaters and beacons, DMR repeaters,
+every radio licence in RATEL's public register (~161k frequency assignments),
+FM and TV transmitters, mobile network base stations and registered Wi-Fi links.
 
 ## What's in it
 
@@ -12,6 +13,9 @@ every radio licence in RATEL's public register (~161k frequency assignments).
 | [SRS repeater map](https://yu1srs.org.rs/repetitori-u-srbiji/) | same network + repeaters in neighbouring countries | exact |
 | [BrandMeister](https://brandmeister.network/) | DMR repeaters with Serbian IDs (`220xxx`) | exact |
 | [RATEL reg203](https://registar.ratel.rs/cyr/reg203) | every radio-frequency licence: holder, TX/RX, site, station/service type, validity | fixed stations; mobile stations have none |
+| [RATEL reg204](https://registar.ratel.rs/cyr/reg204) | broadcasting: FM radio and TV transmitters (frequency, channel, station ID, holder, site, validity) | exact |
+| [RATEL reg221](https://registar.ratel.rs/cyr/reg221) | mobile network radio stations of Telekom Srbija, Yettel and A1 (band, 2G–5G), one pin per operator site | exact |
+| [RATEL reg215](https://registar.ratel.rs/cyr/reg215) | registered licence-exempt stations: 2.4 / 5 / 60 GHz RLAN (Wi-Fi) stations and E-band links — technical data only, no applicant details | exact |
 | [RATEL documents](https://www.ratel.rs/sr/rf-spektar) | spectrum plans and regulations (PDF/DOC), mirrored to `lib/` | — |
 
 The same station listed by several sources is merged into one pin; its details
@@ -45,7 +49,7 @@ PORT=3300 yarn web      # map on http://localhost:3300
 
 | command | does |
 |---|---|
-| `yarn fetch [source ...]` | fetch all (or the named) sources, then merge duplicates and resolve positions. Sources: `yu1srs-repeaters`, `yu1srs-map`, `brandmeister`, `ratel-reg203` |
+| `yarn fetch [source ...]` | fetch all (or the named) sources, then merge duplicates and resolve positions. Sources: `yu1srs-repeaters`, `yu1srs-map`, `brandmeister`, `ratel-reg203`, `ratel-reg204`, `ratel-reg221`, `ratel-reg215` |
 | `yarn reg203-enrich` | add holder name/address, inspection and start-of-use dates, full station description to licences |
 | `yarn gazetteer` | geocode site names that still have no position (OpenStreetMap Nominatim, 1 req/s) into `data/gazetteer.json` — review the result, wrong matches happen |
 | `yarn bandplan [pdf]` | parse RATEL's band plan table (PDF, needs `pdftotext`) into `data/bandplan.json` |

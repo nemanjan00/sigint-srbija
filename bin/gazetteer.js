@@ -12,7 +12,7 @@ const args = parseArgs({
 	}
 }).values;
 
-const unresolved = storage.getEmitters("lat IS NULL AND (kind IS NULL OR kind != 'licence')");
+const unresolved = storage.getEmitters("lat IS NULL AND " + geo.NOT_REGISTER);
 const names = unresolved.reduce((result, emitter) => {
 	return result.concat(gazetteer.keysFor(emitter));
 }, []);

@@ -18,6 +18,11 @@ const FREQ_TOLERANCE_HZ = 2000;
 // Sources disagree on frequencies of the same station (beacon YU0ZVA 144.41250
 // vs 144.44125, YU0ZUA 432.401 vs 432.2401), so a shared callsign + kind allows more slack
 const CALLSIGN_FREQ_TOLERANCE_HZ = 250000;
+// Register kinds (RATEL) are never merged or positioned from other sources
+const REGISTER_KINDS = ["licence", "broadcast", "cell", "link"];
+const NOT_REGISTER = "(kind IS NULL OR kind NOT IN (" + REGISTER_KINDS.map((kind) => {
+	return "'" + kind + "'";
+}).join(", ") + "))";
 
 const normalize = (text) => {
 	return (text || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -117,7 +122,7 @@ const rank = (source) => {
 
 // Link every non-licence listing to the best-ranked listing of the same station
 const linkDuplicates = (db) => {
-	const listings = storage.getEmitters("kind IS NULL OR kind != 'licence'").sort((a, b) => {
+	const listings = storage.getEmitters(NOT_REGISTER).sort((a, b) => {
 		return rank(a.source) - rank(b.source);
 	});
 	const canonicalOf = {};
@@ -152,8 +157,8 @@ const resolve = () => {
 		const donors = storage.getEmitters("coord_source = 'source' AND source IN (" + DONORS.map(() => {
 			return "?";
 		}).join(", ") + ")", DONORS).sort(byPriority);
-		// licences without coordinates are mobile stations; nothing to resolve there
-		const missing = storage.getEmitters("lat IS NULL AND (kind IS NULL OR kind != 'licence')");
+		// register entries without coordinates are mobile stations or unpublished; nothing to resolve there
+		const missing = storage.getEmitters("lat IS NULL AND " + NOT_REGISTER);
 		const update = db.prepare("UPDATE emitters SET lat = ?, lon = ?, coord_source = ?, coord_accuracy_m = ? WHERE id = ?");
 
 		const counts = missing.reduce((result, emitter) => {
@@ -176,5 +181,6 @@ const resolve = () => {
 };
 
 module.exports = {
+	NOT_REGISTER: NOT_REGISTER,
 	resolve: resolve
 };

@@ -65,7 +65,7 @@ const inList = (list, value) => {
 /**
  * @param {Object} options
  * @param {string} [options.query] - Words that must all appear (callsign, DMR ID, name, operator, site, city)
- * @param {string[]} [options.kinds] - repeater | digipeater | beacon | licence
+ * @param {string[]} [options.kinds] - repeater | digipeater | beacon | licence | broadcast | cell | link
  * @param {string[]} [options.sources]
  * @param {string[]} [options.sectors]
  * @param {string} [options.owner] - public | private | amateur

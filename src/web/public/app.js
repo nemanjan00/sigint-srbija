@@ -28,14 +28,22 @@ const KINDS = {
 	repeater: { label: "Repeaters", color: "#22d3ee" },
 	digipeater: { label: "APRS", color: "#a78bfa" },
 	beacon: { label: "Beacons", color: "#f472b6" },
-	licence: { label: "Licences", color: "#f59e0b" }
+	licence: { label: "Licences", color: "#f59e0b" },
+	broadcast: { label: "Broadcast", color: "#f43f5e" },
+	cell: { label: "Cell sites", color: "#34d399" },
+	link: { label: "Wi-Fi & links", color: "#94a3b8" }
 };
+// Kinds of the amateur sources (SRS, BrandMeister); the rest are RATEL registers
+const AMATEUR_KINDS = ["repeater", "digipeater", "beacon"];
 
 const SOURCES = {
 	"yu1srs-repeaters": { label: "SRS table", color: "#22d3ee" },
 	"yu1srs-map": { label: "SRS map", color: "#34d399" },
 	"brandmeister": { label: "BrandMeister", color: "#60a5fa" },
-	"ratel-reg203": { label: "RATEL licences", color: "#f59e0b" }
+	"ratel-reg203": { label: "RATEL licences", color: "#f59e0b" },
+	"ratel-reg204": { label: "RATEL broadcast", color: "#f43f5e" },
+	"ratel-reg221": { label: "RATEL cell sites", color: "#34d399" },
+	"ratel-reg215": { label: "RATEL Wi-Fi & links", color: "#94a3b8" }
 };
 
 // Frequency presets (Hz). Emitters match when their TX range overlaps.
@@ -97,7 +105,7 @@ const loadData = () => {
 				type: "Feature",
 				id: row.id,
 				geometry: { type: "Point", coordinates: [row.lon, row.lat] },
-				properties: { id: row.id, kind: row.kind, label: row.kind === "licence" ? "" : (row.callsign || "") }
+				properties: { id: row.id, kind: row.kind, label: AMATEUR_KINDS.includes(row.kind) ? (row.callsign || "") : "" }
 			};
 		});
 		data.haystacks = data.rows.map((row) => {
@@ -317,7 +325,7 @@ const addLayers = () => {
 		clusterRadius: 48,
 		clusterMaxZoom: 13,
 		clusterProperties: {
-			amateur: ["+", ["case", ["!=", ["get", "kind"], "licence"], 1, 0]]
+			amateur: ["+", ["case", ["in", ["get", "kind"], ["literal", AMATEUR_KINDS]], 1, 0]]
 		}
 	});
 	map.addSource("selected", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
@@ -387,7 +395,7 @@ const addLayers = () => {
 		paint: {
 			"circle-color": kindColor,
 			"circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 7, 14, 14],
-			"circle-opacity": ["match", ["get", "kind"], "licence", 0.12, 0.3],
+			"circle-opacity": ["case", ["in", ["get", "kind"], ["literal", AMATEUR_KINDS]], 0.3, 0.12],
 			"circle-blur": 1
 		}
 	});
@@ -1072,7 +1080,7 @@ const filterPanel = () => {
 			section("Service", codePicker(data.lookups.serviceTypes, "service_type", [s, "serviceTypes"], "Any service"))),
 		Separator({ class: "bg-white/5" }),
 		el("div", { class: "grid gap-4" },
-			switchRow("active-only", "Valid licences only", "Hide expired RATEL licences", [s, "activeOnly"]),
+			switchRow("active-only", "Valid licences only", "Hide expired RATEL licences and broadcast assignments", [s, "activeOnly"]),
 			switchRow("precise-only", "Precise positions only", "Hide city-level / grid-square guesses", [s, "preciseOnly"]),
 			switchRow("show-duplicates", "Show every listing", "One pin per source instead of one per station", [s, "showDuplicates"])),
 		Separator({ class: "bg-white/5" }),
@@ -1322,7 +1330,7 @@ const channelBar = (detail, spectrum) => {
 				const high = signal.tx_high_hz > signal.tx_hz ? signal.tx_high_hz : signal.tx_hz + bandwidth / 2;
 				const box = bar.span(low + (high - low) * CHANNEL_GAP, high - (high - low) * CHANNEL_GAP);
 				const barHeight = self ? height : 10 + Math.log(1 + signal.count) / Math.log(1 + peak) * (height - 18);
-				const color = self ? "var(--primary)" : (signal.amateur ? KINDS.repeater.color : KINDS.licence.color);
+				const color = self ? "var(--primary)" : (KINDS[signal.kind] || KINDS.licence).color;
 				const clickable = !self && signal.id !== null;
 				const label = formatMhz(signal.tx_hz) + " MHz · " + (signal.label || "unnamed") + (signal.count > 1 ? " +" + (signal.count - 1) + " more" : "") + (signal.id === null ? " (mobile, no position)" : "");
 
@@ -1412,6 +1420,62 @@ const spectrumBlock = (detail) => {
 				el("a", { class: "text-primary hover:underline", href: spectrum.plan.url, target: "_blank", rel: "noreferrer" }, "RATEL band plan, Table 1"),
 				spectrum.plan.date ? " (" + spectrum.plan.date + ")" : "",
 				band.footnotes.length ? " · notes " + band.footnotes.join(", ") : "")));
+};
+
+// RATEL registers other than reg203: cell site bands, link radio parameters
+const cellBlock = (detail) => {
+	const raw = detail.raw || {};
+
+	if (detail.kind !== "cell" || !raw.stations) {
+		return null;
+	}
+
+	const byBand = raw.stations.reduce((result, station) => {
+		result[station.band] = (result[station.band] || []).concat([station.technology]);
+		return result;
+	}, {});
+
+	return el("div", { class: "grid gap-1.5" },
+		SubHeading("Registered radio stations (" + raw.stations.length + ")"),
+		el("div", { class: "overflow-hidden rounded-lg border border-white/5" },
+			el("table", { class: "w-full text-xs" },
+				el("thead", { class: "bg-white/5 text-muted-foreground" },
+					el("tr", {}, el("th", { class: "px-2 py-1.5 text-left font-medium" }, "Band"), el("th", { class: "px-2 py-1.5 text-left font-medium" }, "Technology"))),
+				el("tbody", {},
+					...Object.keys(byBand).sort((a, b) => {
+						return Number(a) - Number(b);
+					}).map((band) => {
+						return el("tr", { class: "border-t border-white/5" },
+							el("td", { class: "px-2 py-1 font-mono" }, band + " MHz"),
+							el("td", { class: "px-2 py-1" }, byBand[band].join(", ")));
+					})))),
+		el("span", { class: "text-[11px] text-muted-foreground" }, "Register ids " + raw.ids.join(", ")));
+};
+
+const linkBlock = (detail) => {
+	const raw = detail.raw || {};
+
+	if (detail.kind !== "link") {
+		return null;
+	}
+
+	const unit = (value, suffix) => {
+		return value === null || value === undefined ? null : value + " " + suffix;
+	};
+
+	return el("div", { class: "grid gap-1" },
+		SubHeading(raw.type === "E-band link" ? "E-band link (end " + raw.end + ")" : "RLAN station"),
+		field("Band", raw.band || (raw.frequency_mhz ? raw.frequency_mhz + " MHz" : null), { mono: true }),
+		field("Bandwidth", unit(raw.bandwidth_mhz, "MHz"), { mono: true }),
+		field("Configuration", raw.configuration),
+		field("Power", [unit(raw.power_dbm, "dBm"), raw.eirp_dbm !== undefined && raw.eirp_dbm !== null ? "EIRP " + raw.eirp_dbm + " dBm" : null].filter(Boolean).join(" · "), { mono: true }),
+		field("Capacity", unit(raw.capacity_mbit, "Mbit/s"), { mono: true }),
+		field("Azimuth", unit(raw.azimuth, "°"), { mono: true }),
+		field("Equipment", raw.equipment),
+		field("Antenna", [raw.antenna, unit(raw.antenna_gain_dbi === undefined ? raw.antenna_gain : raw.antenna_gain_dbi, "dBi"), raw.antenna_height_m ? raw.antenna_height_m + " m above ground" : null, raw.polarization ? "pol. " + raw.polarization : null].filter(Boolean).join(" · ")),
+		field("Other end", raw.partner ? raw.partner.lat.toFixed(5) + ", " + raw.partner.lon.toFixed(5) : null, { mono: true }),
+		field("Registered", raw.registered, { mono: true }),
+		el("span", { class: "text-[11px] text-muted-foreground" }, "Applicant, address, SSID and MAC are in the register but not collected here."));
 };
 
 const licenceBlock = (detail) => {
@@ -1530,7 +1594,7 @@ const detailView = (detail) => {
 		frequencyBlock(detail),
 		el("div", { class: "grid" },
 			field(detail.kind === "licence" ? "Transmitter site" : "Site", detail.location),
-			field("Callsign", detail.callsign || (detail.kind === "licence" ? "not published in the register" : null), { mono: Boolean(detail.callsign) }),
+			field(detail.kind === "broadcast" ? "Identification" : "Callsign", detail.callsign || (detail.kind === "licence" ? "not published in the register" : null), { mono: Boolean(detail.callsign) }),
 			field("DMR ID", detail.dmr_id, { mono: true }),
 			field("Name", detail.name && detail.name !== detail.callsign ? detail.name : null),
 			field("Operator", detail.source !== "ratel-reg203" ? detail.operator : null),
@@ -1544,6 +1608,8 @@ const detailView = (detail) => {
 			field("Position from", coordinateSourceLabel(detail) + (detail.coord_accuracy_m ? " · ±" + formatNumber(detail.coord_accuracy_m) + " m" : ""))),
 		listingsBlock(detail),
 		spectrumBlock(detail),
+		cellBlock(detail),
+		linkBlock(detail),
 		licenceBlock(detail),
 		rawBlock(detail.raw));
 };

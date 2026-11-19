@@ -57,12 +57,36 @@ const STATION_TYPES = {
 	NL: { hear: "Maritime navigation beacon", prefer: ["navigation"] },
 	SM: { hear: "Meteorological aids station", prefer: ["radiosonde"] }
 };
+const OWN_BANDWIDTH_KINDS = ["broadcast", "cell", "link"];
 // Band plan hints shown for a licence (the full list of uses is shown anyway)
 const MAX_PLAN_HINTS = 2;
 
-// Hints from the emitter's own data (amateur sources say the mode)
+// Hints from the emitter's own data (amateur sources say the mode, registers the kind).
+// bandwidthHz null = known to be unknown (the TX range is a band, not the signal)
 const fromEmitter = (emitter) => {
 	const raw = emitter.raw || {};
+
+	if (emitter.kind === "broadcast") {
+		if (emitter.mode === "TV") {
+			return { hear: "Digital terrestrial TV (DVB-T2): an 8 MHz block carrying a multiplex of channels — decodable with a DVB-T2 tuner", bandwidthHz: 8000000, technology: "DVB-T2" };
+		}
+
+		return { hear: "FM broadcast radio: wideband FM stereo, station name and text on RDS", bandwidthHz: 200000, technology: "FM broadcast" };
+	}
+
+	if (emitter.kind === "cell") {
+		return { hear: "Mobile network base station (" + (emitter.mode || "?") + ", bands " + (raw.bands || []).join(", ") + " MHz): continuous digital downlink carriers, nothing to listen to — cell scanners show the cell IDs", bandwidthHz: null, technology: "mobile network" };
+	}
+
+	if (emitter.kind === "link") {
+		const bandwidthHz = raw.bandwidth_mhz ? raw.bandwidth_mhz * 1e6 : null;
+
+		if (raw.type === "E-band link") {
+			return { hear: "E-band microwave link (" + raw.frequency_mhz + " MHz): a pencil-thin beam between two masts, only detectable inside it", bandwidthHz: bandwidthHz, technology: "E-band link" };
+		}
+
+		return { hear: "Wi-Fi / RLAN radio (" + (emitter.mode || "RLAN") + "): OFDM data bursts, exact channel not registered", bandwidthHz: bandwidthHz, technology: "RLAN" };
+	}
 
 	if (emitter.mode === "DMR") {
 		const slots = [raw.ts1 ? "TS1 " + raw.ts1 : null, raw.ts2 ? "TS2 " + raw.ts2 : null].filter(Boolean).join(", ");
@@ -131,7 +155,10 @@ const describe = (emitter, uses) => {
 
 	let bandwidth = null;
 
-	if (emitter.tx_high_hz && emitter.tx_high_hz > emitter.tx_hz) {
+	// a register's TX range is the band (cell, RLAN), not the signal: trust the kind's own bandwidth
+	if (own && OWN_BANDWIDTH_KINDS.includes(emitter.kind)) {
+		bandwidth = own.bandwidthHz ? { hz: own.bandwidthHz, how: emitter.kind === "link" ? "registered" : "typical for " + own.technology } : null;
+	} else if (emitter.tx_high_hz && emitter.tx_high_hz > emitter.tx_hz) {
 		bandwidth = { hz: emitter.tx_high_hz - emitter.tx_hz, how: "licensed block" };
 	} else if (best && best.bandwidthHz) {
 		bandwidth = { hz: best.bandwidthHz, how: "typical for " + best.technology };

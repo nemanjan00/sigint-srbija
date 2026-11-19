@@ -92,7 +92,9 @@ const lookup = (hz) => {
  * @param {object} emitter emitters row with parsed raw (and `detail` for reg203)
  */
 const describe = (emitter) => {
-	const band = lookup(emitter.tx_hz);
+	// a range (cell band, RLAN band) is looked up at its middle, not on its lower edge
+	const hz = emitter.tx_high_hz && emitter.tx_high_hz > emitter.tx_hz ? Math.round((emitter.tx_hz + emitter.tx_high_hz) / 2) : emitter.tx_hz;
+	const band = lookup(hz);
 	const guess = hints.describe(emitter, band ? band.uses : []);
 
 	const meta = load();

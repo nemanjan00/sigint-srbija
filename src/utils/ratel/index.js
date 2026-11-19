@@ -1,5 +1,6 @@
 // Parsers for value formats used on RATEL registers (registar.ratel.rs)
 const decodeHTML = require("entities").decodeHTML;
+const parseCsv = require("csv-parse/sync").parse;
 
 const FREQ_UNITS = {
 	hz: 1,
@@ -98,7 +99,65 @@ const splitHolder = (text) => {
 	};
 };
 
+const decodeUtf16 = (buffer) => {
+	if (buffer[0] === 0xfe && buffer[1] === 0xff) {
+		return Buffer.from(buffer).swap16().toString("utf16le").slice(1);
+	}
+
+	if (buffer[0] === 0xff && buffer[1] === 0xfe) {
+		return buffer.toString("utf16le").slice(1);
+	}
+
+	throw new Error("Unexpected export encoding, no UTF-16 BOM: " + JSON.stringify(buffer.slice(0, 40).toString("latin1")));
+};
+
+/**
+ * A register's CSV export (UTF-16 with BOM, tab-separated, quoted) as objects
+ * keyed by the header row. Repeated header names get " 2", " 3", ... appended.
+ * @param {Buffer} buffer
+ * @returns {Object[]}
+ */
+const parseExport = (buffer) => {
+	const rows = parseCsv(decodeUtf16(buffer), {
+		delimiter: "\t",
+		quote: "\"",
+		relax_quotes: true,
+		relax_column_count: true,
+		skip_empty_lines: true
+	});
+	const seen = {};
+	const header = (rows[0] || []).map((name) => {
+		seen[name] = (seen[name] || 0) + 1;
+		return seen[name] === 1 ? name : name + " " + seen[name];
+	});
+
+	return rows.slice(1).map((row) => {
+		return header.reduce((object, name, index) => {
+			object[name] = row[index] === undefined ? "" : row[index].trim();
+			return object;
+		}, {});
+	});
+};
+
+// "20°27´56´´E  44°48´50´´N" -> { lat: 44.813889, lon: 20.465556 }; null if not that format
+const parseDmsPair = (text) => {
+	const parts = Array.from(String(text || "").matchAll(/(\d+)°\s*(\d+)[´'’]\s*([\d.,]+)\s*(?:´´|"|''|”)?\s*([NSEW])/g));
+
+	if (parts.length !== 2) {
+		return null;
+	}
+
+	return parts.reduce((result, part) => {
+		const value = Number(part[1]) + Number(part[2]) / 60 + Number(part[3].replace(",", ".")) / 3600;
+		const signed = part[4] === "S" || part[4] === "W" ? -value : value;
+		result[part[4] === "N" || part[4] === "S" ? "lat" : "lon"] = Math.round(signed * 1e6) / 1e6;
+		return result;
+	}, {});
+};
+
 module.exports = {
+	parseExport: parseExport,
+	parseDmsPair: parseDmsPair,
 	normWs: normWs,
 	parseFreq: parseFreq,
 	parseDate: parseDate,

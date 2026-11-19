@@ -86,11 +86,14 @@ const ratelRegistry = {
 	/**
 	 * Whole register as the site's CSV export (UTF-16LE with BOM, TSV)
 	 * @param {string} register - Register id, e.g. "reg203"
+	 * @param {Object} [params] - Search form fields of that register (default: reg203's empty search)
 	 * @returns {Promise<Buffer>} raw bytes
 	 */
-	getCsvExport: (register) => {
+	getCsvExport: (register, params) => {
+		const searchParams = params ? Object.assign({ action: "table" }, params) : SEARCH_PARAMS;
+
 		return ratelRegistry._get("cyr/" + register, {
-			searchParams: Object.assign({}, SEARCH_PARAMS, { format: "csv" }),
+			searchParams: Object.assign({}, searchParams, { format: "csv" }),
 			responseType: "buffer",
 			timeout: {
 				request: EXPORT_TIMEOUT

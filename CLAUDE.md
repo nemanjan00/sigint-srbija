@@ -28,7 +28,7 @@ Collects public signal sources in Serbia (repeaters, beacons, licences, ...) int
 - The database is not in the image. It is copied to the server and mounted: `/data/sigint/sigint.sqlite` → container `SIGINT_DB=/data/sigint/sigint.sqlite` (directory mount, SQLite needs to write WAL files next to it). One replica (SQLite).
 - Data updates itself: the `updater` service (`bin/cron.js`, node-cron, `UPDATE_SCHEDULE` default `0 4 * * *` Europe/Belgrade) runs `bin/fetch.js` then `bin/reg203-enrich.js` as child processes against the mounted DB; the web service's cache follows `sources.fetched_at`. Raw reg203 CSVs are kept next to the DB (`<db dir>/reg203/`, newest `REG203_KEEP_CSV`=7). A reg203 rebuild carries enrichment over to unchanged assignments, so names don't regress until enrichment reruns. Logs: `docker service logs sigint-srbija_updater`.
 - Replace the data by hand: `sqlite3 data/sigint.sqlite ".backup /tmp/s.sqlite"`, copy it over the server file, then `docker service update --force sigint-srbija_web`.
-- Update the app: push to main, wait for the Image workflow, then `docker service update --image ghcr.io/nemanjan00/sigint-srbija:latest --with-registry-auth sigint-srbija_web` (or re-run `docker stack deploy`).
+- Update the app: push to main (`git push origin master:main` — local branch is master), wait for the Image workflow, then `docker service update --image ghcr.io/nemanjan00/sigint-srbija:<short sha> --with-registry-auth` for `sigint-srbija_web` and `sigint-srbija_updater`. The sha tag has **no prefix** (`3e6a1d4`, not `sha-3e6a1d4`); a wrong tag takes the site down.
 
 ## Gotchas found the hard way
 
@@ -116,3 +116,7 @@ RATEL "Plan namene RF opsega — Tabela 1" (PDF, Dec 2025), parsed from `pdftote
 - `yu1srs-map` — Google My Maps KML behind https://yu1srs.org.rs/repetitori-u-srbiji/ — same network with coordinates, plus repeaters in neighbouring countries.
 - `brandmeister` — BrandMeister API, master 2302, DMR IDs 220xxx (repeaters only). Some positions are city centres (YU0DZA, YU0DKS ~8-10 km off the map).
 - `ratel-reg203` — https://registar.ratel.rs/cyr/reg203 — every RF licence (~161k assignments); raw CSV kept in `data/reg203/`.
+- `ratel-reg204` — broadcasting register (kind `broadcast`, mode FM / TV), full CSV export with status. As of 2026-11 every TV assignment is marked expired (most on 2025-12-25), so TV shows only with "valid only" off.
+- `ratel-reg221` — mobile network stations (kind `cell`), 154k rows grouped to one emitter per operator + site (key `operator/lat,lon`); TX = downlink of the lowest band, all bands/technologies in `raw`.
+- `ratel-reg215` — licence-exempt registrations (kind `link`): export per `vrsta` (1000 RLAN, 2000 E-band links, one emitter per end; 3000 has no coordinates, skipped). Applicants are often private persons: never store name, address, phone, e-mail, tax id, SSID, MAC; operator/site name only for the three mobile operators. ~270 rows have lat/lon swapped (corrected via `toWgs84`).
+- Register kinds (`licence`, `broadcast`, `cell`, `link`) are excluded from duplicate merging and position resolution (`NOT_REGISTER` in `src/geo`); the RATEL exports share `ratel.parseExport` (UTF-16 TSV → objects) and `getCsvExport(register, params)`.
