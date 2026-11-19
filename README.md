@@ -15,8 +15,8 @@ FM and TV transmitters, mobile network base stations, registered Wi-Fi links and
 | [RATEL reg203](https://registar.ratel.rs/cyr/reg203) | every radio-frequency licence: holder, TX/RX, site, station/service type, validity | fixed stations; mobile stations have none |
 | [RATEL reg204](https://registar.ratel.rs/cyr/reg204) | broadcasting: FM radio and TV transmitters (frequency, channel, station ID, holder, site, validity) | exact |
 | [RATEL reg221](https://registar.ratel.rs/cyr/reg221) | mobile network radio stations of Telekom Srbija, Yettel and A1 (band, 2G–5G), one pin per operator site | exact |
-| [RATEL reg215](https://registar.ratel.rs/cyr/reg215) | registered licence-exempt stations: 2.4 / 5 / 60 GHz RLAN (Wi-Fi) stations and E-band links — technical data only, no applicant details | exact |
-| [RATEL reg215 CB](https://registar.ratel.rs/cyr/reg215) | registered CB (27 MHz) radio stations: radio, power, emission — no names or addresses | geocoded from the registered address (OpenStreetMap), else the place |
+| [RATEL reg215](https://registar.ratel.rs/cyr/reg215) | registered licence-exempt stations: 2.4 / 5 / 60 GHz RLAN (Wi-Fi) stations and E-band links, with the applicant | exact |
+| [RATEL reg215 CB](https://registar.ratel.rs/cyr/reg215) | registered CB (27 MHz) radio stations: address, radio, power, emission | geocoded from the registered address (OpenStreetMap), else the place |
 | [Jugomesh](https://jugomesh.com/map) | Meshtastic LoRa mesh routers and repeaters (869.525 MHz); personal client nodes are left out | exact |
 | [RATEL documents](https://www.ratel.rs/sr/rf-spektar) | spectrum plans and regulations (PDF/DOC), mirrored to `lib/` | — |
 

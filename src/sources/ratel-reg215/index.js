@@ -6,9 +6,10 @@
 //   type 2000  E-band (71-86 GHz) point-to-point links; one emitter per end,
 //              tx_hz = that end's transmit frequency, raw.partner = the other end
 //   type 3000  CB radio stations (27 MHz): no coordinates, separate source ratel-reg215-cb
-// Applicants are often private persons: their name, address, phone, fax,
-// e-mail, tax number, SSID and MAC are never stored (MAC only feeds the key
-// hash). Operator and site name are kept for the mobile network operators only.
+// operator = the applicant as published (mobile operators by their short name),
+// location = the published site name / address. raw.published is the register
+// row unchanged (applicant, address, contact, SSID, MAC, ...); the other raw
+// fields are the parsed technical values.
 const crypto = require("crypto");
 const ratelRegistry = require("../../services/ratel-registry");
 const ratel = require("../../utils/ratel");
@@ -85,8 +86,8 @@ const rlanEmitter = (row) => {
 		kind: "link",
 		mode: "RLAN " + (configuration || "?"),
 		name: "RLAN " + (configuration || "") + " " + (row["Фреквенцијски опсег радио станице"] || "").replace(",", "."),
-		operator: operator,
-		location: operator ? oneLine(row["Назив/адреса локације"]) : null,
+		operator: operator || oneLine(row["Назив подносиоца пријаве"]),
+		location: oneLine(row["Назив/адреса локације"]),
 		tx_hz: band.low,
 		tx_high_hz: band.high,
 		lat: position.lat,
@@ -108,7 +109,8 @@ const rlanEmitter = (row) => {
 			antenna_gain: number(row["Добитак антене"]),
 			azimuth: number(row["Азимут максималног зрачења"]),
 			partner: partnerOf(partner),
-			registered: ratel.parseDate(row["Датум пријаве"]) || undefined
+			registered: ratel.parseDate(row["Датум пријаве"]) || undefined,
+			published: row
 		}
 	};
 };
@@ -134,8 +136,8 @@ const ebandEmitters = (row) => {
 			kind: "link",
 			mode: "E-band P-P",
 			name: "E-band link " + (index === 0 ? "A" : "B") + (mhz === null ? "" : " · " + mhz / 1e3 + " GHz"),
-			operator: operator,
-			location: operator ? oneLine(row["Назив/адреса локације " + end]) : null,
+			operator: operator || oneLine(row["Назив подносиоца пријаве"]),
+			location: oneLine(row["Назив/адреса локације " + end]),
 			tx_hz: centre === null ? null : Math.round(centre - half),
 			tx_high_hz: centre === null ? null : Math.round(centre + half),
 			rx_hz: number(row["Предајна фреквенција на локацији " + partnerEnd + " (MHz)"]) === null ? null : Math.round(number(row["Предајна фреквенција на локацији " + partnerEnd + " (MHz)"]) * 1e6),
@@ -162,7 +164,8 @@ const ebandEmitters = (row) => {
 				azimuth: number(row["Азимут на локацији " + end]),
 				equipment: row["Произвођач, тип радио уређаја"] || undefined,
 				partner: partnerOf(positions[1 - index]),
-				registered: ratel.parseDate(row["Датум пријаве"]) || undefined
+				registered: ratel.parseDate(row["Датум пријаве"]) || undefined,
+				published: row
 			}
 		};
 	});
@@ -170,7 +173,7 @@ const ebandEmitters = (row) => {
 
 const ratelReg215 = {
 	id: "ratel-reg215",
-	description: "RATEL register of licence-exempt stations (reg215): RLAN / Wi-Fi stations and E-band links (no personal data)",
+	description: "RATEL register of licence-exempt stations (reg215): RLAN / Wi-Fi stations and E-band links",
 	url: "https://registar.ratel.rs/cyr/reg215",
 
 	fetch: () => {

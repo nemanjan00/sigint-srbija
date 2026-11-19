@@ -3,9 +3,8 @@
 // (place + street); it is geocoded via OSM Nominatim (src/geocoder, cached in
 // the database), falling back to the place when the street isn't found.
 //
-// Applicants are private persons. Stored: position, place, registration date,
-// radios (make/type, power, emission, antenna). Never stored: name, address
-// text (street), phone, fax, e-mail, serial numbers. The key is a hash.
+// operator = the applicant, location = the published address; raw.published is
+// the register row unchanged.
 //
 //   tx_hz..tx_high_hz = the CB band (40 channels, 26.965-27.405 MHz)
 //   mode              = emissions of the registered radios (FM / AM / SSB)
@@ -99,8 +98,9 @@ const toEmitter = (row) => {
 			name: "CB station",
 			tx_hz: CB_LOW_HZ,
 			tx_high_hz: CB_HIGH_HZ,
+			operator: clean(row["Назив подносиоца пријаве"]) || null,
 			city: place || null,
-			location: place || null,
+			location: [street, clean(row["Место и поштански број локације радио станице"])].filter(Boolean).join(", ") || null,
 			lat: found ? found.lat : null,
 			lon: found ? found.lon : null,
 			coord_source: found ? (found.index === 0 ? "source:geocoded:address" : "source:geocoded:place") : null,
@@ -111,7 +111,8 @@ const toEmitter = (row) => {
 				register: "reg215 CB (27 MHz)",
 				place: place || undefined,
 				registered: ratel.parseDate(row["Датум пријаве"]) || undefined,
-				radios: radios
+				radios: radios,
+				published: row
 			}
 		};
 	});
@@ -119,7 +120,7 @@ const toEmitter = (row) => {
 
 const ratelReg215Cb = {
 	id: "ratel-reg215-cb",
-	description: "RATEL register reg215, CB radio stations (27 MHz): positions geocoded from the address, no personal data",
+	description: "RATEL register reg215, CB radio stations (27 MHz): positions geocoded from the registered address",
 	url: "https://registar.ratel.rs/cyr/reg215",
 
 	fetch: () => {
