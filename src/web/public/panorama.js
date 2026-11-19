@@ -91,6 +91,8 @@ const sitesAround = (rows, observer, radiusM) => {
  * @param {Object} options
  * @param {Object} options.kinds - kind -> { label, color }
  * @param {Function} options.onSite - called with a site's emitter ids when it is clicked
+ * @param {Function} [options.onSites] - called with the sites after every recompute
+ * @param {Function} [options.onCompass] - called when the first compass reading arrives
  * @returns {Object} api
  */
 export const createPanorama = (options) => {
@@ -260,8 +262,10 @@ export const createPanorama = (options) => {
 		// heading readout
 		context.font = "600 12px 'JetBrains Mono', monospace";
 		context.fillStyle = "rgb(103 232 249 / 0.9)";
-		context.fillText(Math.round((state.heading + 360) % 360) + "°", width / 2 - 14, 18);
-		context.fillRect(width / 2, 24, 1, 8);
+		// in AR the floating toolbar covers the top
+		const readoutTop = state.ar ? 84 : 0;
+		context.fillText(Math.round((state.heading + 360) % 360) + "°", width / 2 - 14, readoutTop + 18);
+		context.fillRect(width / 2, readoutTop + 24, 1, 8);
 	};
 
 	// --- radar ----------------------------------------------------------------
@@ -458,6 +462,10 @@ export const createPanorama = (options) => {
 			return;
 		}
 
+		if (state.compass !== true && options.onCompass) {
+			options.onCompass();
+		}
+
 		state.compass = true;
 		const screenAngle = (screen.orientation && screen.orientation.angle) || 0;
 		state.heading = (heading + screenAngle + 360) % 360;
@@ -497,6 +505,9 @@ export const createPanorama = (options) => {
 		window.removeEventListener("deviceorientation", onOrientation);
 		video.classList.add("hidden");
 		video.srcObject = null;
+		element.classList.remove("!grid-cols-1", "!gap-0");
+		stripBox.classList.remove("!rounded-none");
+		radarBox.classList.remove("!hidden");
 		state.ar = null;
 		state.fov = null;
 		state.pitch = 0;
@@ -531,6 +542,10 @@ export const createPanorama = (options) => {
 				}, null, { enableHighAccuracy: true, maximumAge: 5000 }) : null;
 
 				state.ar = { stream: stream, watch: watch };
+				// camera fills the screen: no radar column, no rounded box
+				element.classList.add("!grid-cols-1", "!gap-0");
+				stripBox.classList.add("!rounded-none");
+				radarBox.classList.add("!hidden");
 				state.fov = AR_FOV;
 				video.srcObject = stream;
 				video.classList.remove("hidden");

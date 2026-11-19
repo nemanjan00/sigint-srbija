@@ -151,7 +151,8 @@ const s = state({
 	panoramaRadius: 10,
 	panoramaAr: false,
 	panoramaError: "",
-	panoramaSites: 0
+	panoramaSites: 0,
+	arFiltersOpen: false
 });
 
 const frequencyRange = () => {
@@ -1841,10 +1842,12 @@ const explorerOverlay = () => {
 // --- UI: RF panorama (360° around a point, AR with the camera) ---------------
 
 const PANORAMA_RADII = [5, 10, 30, 80];
+const NO_COMPASS = "No access to the compass: drag the view to line it up with the camera.";
 
 // { lat, lon, label, mine } - mine: the user's own location (not put in the URL)
 let panoramaAt = null;
 let panorama = null;
+let panoramaRoot = null;
 
 const openPanorama = (observer) => {
 	panoramaAt = observer;
@@ -1863,6 +1866,8 @@ const closePanorama = () => {
 		panorama.stopAr();
 	}
 
+	exitFullscreen();
+	s.arFiltersOpen = false;
 	s.panoramaAr = false;
 	s.panoramaOpen = false;
 	replaceUrl();
@@ -1891,22 +1896,37 @@ const openAroundMe = () => {
 };
 
 // Camera + compass; follows GPS when looking around the user's own location
+const exitFullscreen = () => {
+	if (document.fullscreenElement && document.exitFullscreen) {
+		document.exitFullscreen().catch(() => {});
+	}
+};
+
 const toggleAr = () => {
 	if (panorama.arActive()) {
 		panorama.stopAr();
 		s.panoramaAr = false;
+		s.arFiltersOpen = false;
+		exitFullscreen();
 		return;
 	}
 
 	s.panoramaError = "";
+
+	// full screen must be requested inside the tap, before the permission prompts
+	if (panoramaRoot && panoramaRoot.requestFullscreen) {
+		panoramaRoot.requestFullscreen().catch(() => {});
+	}
+
 	panorama.startAr(Boolean(panoramaAt && panoramaAt.mine)).then(() => {
 		s.panoramaAr = true;
 
 		if (!panorama.hasCompass()) {
-			s.panoramaError = "No access to the compass: drag the view to line it up with the camera.";
+			s.panoramaError = NO_COMPASS;
 		}
 	}).catch((error) => {
 		s.panoramaError = error.message;
+		exitFullscreen();
 	});
 };
 
@@ -1920,9 +1940,67 @@ const openSite = (ids) => {
 	}
 };
 
+const panoramaSummary = () => {
+	const where = panoramaAt ? (panoramaAt.label ? "from " + panoramaAt.label : panoramaAt.lat.toFixed(4) + ", " + panoramaAt.lon.toFixed(4)) : "";
+	return where + " · " + formatNumber(s.panoramaSites) + " sites within " + s.panoramaRadius + " km";
+};
+
+const radiusButtons = () => {
+	return PANORAMA_RADII.map((km) => {
+		return Button({
+			variant: "secondary",
+			size: "sm",
+			class: () => "h-7 rounded-full px-2.5 text-xs" + (s.panoramaRadius === km ? " bg-primary text-primary-foreground hover:bg-primary/90" : ""),
+			onclick: () => {
+				s.panoramaRadius = km;
+				panorama.setRadius(km * 1000);
+				replaceUrl();
+			}
+		}, km + " km");
+	});
+};
+
+// Full-screen AR: floating toolbar on top, filter sheet (the map's own filters) at the bottom
+const arControls = () => {
+	const kindCounts = countBy("kind");
+
+	return el("div", { class: "pointer-events-none absolute inset-0 flex flex-col justify-between p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))]" },
+		el("div", { class: "pointer-events-auto grid min-w-0 gap-2" },
+			el("div", { class: "panel flex min-w-0 items-center gap-2 rounded-2xl px-3 py-2" },
+				el("span", { class: "min-w-0 flex-1 truncate text-xs text-muted-foreground" }, () => formatNumber(s.panoramaSites) + " sites · " + s.panoramaRadius + " km"),
+				Button({ variant: "secondary", size: "sm", class: "h-8 shrink-0 rounded-full px-3 text-xs", onclick: () => {
+					s.arFiltersOpen = !s.arFiltersOpen;
+				} }, "Filters", when(() => activeFilterCount() > 0, () => {
+					return el("span", { class: "ml-1.5 grid size-4 place-items-center rounded-full bg-primary font-mono text-[10px] text-primary-foreground" }, () => String(activeFilterCount()));
+				})),
+				Button({ variant: "secondary", size: "icon", class: "size-8 shrink-0 rounded-full", onclick: toggleAr, "aria-label": "Stop camera" }, XIcon({ class: "size-4" }))),
+			when(() => s.panoramaError !== "", () => {
+				return el("div", { class: "rounded-lg border border-amber-400/30 bg-black/70 px-3 py-2 text-xs text-amber-200" }, () => s.panoramaError);
+			})),
+		when(() => s.arFiltersOpen, () => {
+			return el("div", { class: "panel pointer-events-auto thin-scroll grid max-h-[55dvh] gap-4 overflow-y-auto rounded-2xl p-4" },
+				el("div", { class: "flex items-center justify-between" },
+					el("span", { class: "text-sm font-semibold" }, "Filters"),
+					Button({ variant: "ghost", size: "sm", class: "h-7 text-xs", onclick: () => {
+						s.arFiltersOpen = false;
+					} }, "Done")),
+				section("Radius", el("div", { class: "flex flex-wrap gap-1" }, ...radiusButtons())),
+				section("Kind", chipGroup(KINDS, [s, "kinds"], kindCounts)),
+				section("Band",
+					ToggleGroup({ type: "single", variant: "outline", size: "sm", spacing: 1.5, value: [s, "band"], class: "flex flex-wrap justify-start", onValueChange: () => {
+						s.minMhz = "";
+						s.maxMhz = "";
+					} },
+					...BANDS.map((band) => {
+						return ToggleGroupItem({ value: band.id, class: "h-8 rounded-full px-3 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground" }, band.label);
+					}))),
+				el("span", { class: "text-[11px] text-muted-foreground" }, "These are the map's filters; the map changes with them."));
+		}));
+};
+
 const panoramaOverlay = () => {
 	return when(() => s.panoramaOpen, () => {
-		const slot = el("div", { class: "min-h-0 flex-1" });
+		const slot = el("div", { class: "h-full" });
 
 		if (!panorama) {
 			panorama = createPanorama({
@@ -1930,6 +2008,11 @@ const panoramaOverlay = () => {
 				onSite: openSite,
 				onSites: (sites) => {
 					s.panoramaSites = sites.length;
+				},
+				onCompass: () => {
+					if (s.panoramaError === NO_COMPASS) {
+						s.panoramaError = "";
+					}
 				}
 			});
 			panorama.setRows(visibleRows());
@@ -1939,45 +2022,28 @@ const panoramaOverlay = () => {
 		panorama.setObserver(panoramaAt);
 		slot.appendChild(panorama.element);
 
-		return el("div", { class: "panel fixed inset-0 z-40 flex flex-col gap-3 p-3 md:inset-6 md:rounded-2xl md:p-4" },
-			el("div", { class: "flex flex-wrap items-center gap-2" },
+		panoramaRoot = el("div", { class: () => s.panoramaAr ? "fixed inset-0 z-50 flex flex-col bg-black" : "panel fixed inset-0 z-40 flex flex-col gap-3 p-3 md:inset-6 md:rounded-2xl md:p-4" },
+			el("div", { class: () => s.panoramaAr ? "hidden" : "flex flex-wrap items-center gap-2" },
 				el("h2", { class: "mr-1 text-base font-semibold tracking-tight" }, el("span", { class: "glow-text" }, "RF"), " panorama"),
-				el("span", { class: "min-w-0 truncate text-xs text-muted-foreground" }, () => {
-					const where = panoramaAt ? (panoramaAt.label ? "from " + panoramaAt.label : panoramaAt.lat.toFixed(4) + ", " + panoramaAt.lon.toFixed(4)) : "";
-					return where + " · " + formatNumber(s.panoramaSites) + " sites within " + s.panoramaRadius + " km";
-				}),
+				el("span", { class: "min-w-0 truncate text-xs text-muted-foreground" }, panoramaSummary),
 				el("div", { class: "ml-auto flex flex-wrap items-center gap-1" },
-					...PANORAMA_RADII.map((km) => {
-						return Button({
-							variant: "secondary",
-							size: "sm",
-							class: () => "h-7 rounded-full px-2.5 text-xs" + (s.panoramaRadius === km ? " bg-primary text-primary-foreground hover:bg-primary/90" : ""),
-							onclick: () => {
-								s.panoramaRadius = km;
-								panorama.setRadius(km * 1000);
-								replaceUrl();
-							}
-						}, km + " km");
-					}),
+					...radiusButtons(),
 					Button({ variant: "outline", size: "sm", class: "h-7 rounded-full px-3 text-xs", onclick: openAroundMe }, "My location"),
-					Button({
-						variant: "outline",
-						size: "sm",
-						class: () => "h-7 rounded-full px-3 text-xs" + (s.panoramaAr ? " border-primary text-primary" : ""),
-						onclick: toggleAr
-					}, () => s.panoramaAr ? "Stop camera" : "AR camera"),
+					Button({ variant: "outline", size: "sm", class: "h-7 rounded-full px-3 text-xs", onclick: toggleAr }, "AR camera"),
 					Button({ variant: "ghost", size: "icon", class: "size-8", onclick: closePanorama, "aria-label": "Close" }, XIcon({ class: "size-4" })))),
-			when(() => s.panoramaError !== "", () => {
+			when(() => s.panoramaError !== "" && !s.panoramaAr, () => {
 				return el("div", { class: "rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200" }, () => s.panoramaError);
 			}),
-			slot,
-			el("div", { class: "flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground" },
+			el("div", { class: "relative min-h-0 flex-1" },
+				slot,
+				when(() => s.panoramaAr, arControls)),
+			el("div", { class: () => s.panoramaAr ? "hidden" : "flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground" },
 				...Object.keys(KINDS).map((kind) => {
 					return legendDot(KINDS[kind].color, KINDS[kind].label);
 				}),
-				el("span", { class: "basis-full md:basis-auto md:ml-auto" }, () => s.panoramaAr ?
-					"Hold the phone upright and turn around; sites are drawn at their compass bearing. Tap one to open it." :
-					"Bearing left to right, nearer sites higher. Drag to look around, scroll to widen or narrow the view, click a site to list it. Follows the map filters.")));
+				el("span", { class: "basis-full md:basis-auto md:ml-auto" }, "Bearing left to right, nearer sites higher. Drag to look around, scroll to widen or narrow the view, click a site to list it. Follows the map filters.")));
+
+		return panoramaRoot;
 	});
 };
 
@@ -2047,7 +2113,9 @@ window.addEventListener("popstate", () => {
 
 document.addEventListener("keydown", (event) => {
 	// Escape closes the topmost thing: panorama / explorer, then details, then filters
-	if (event.key === "Escape" && s.panoramaOpen) {
+	if (event.key === "Escape" && s.panoramaAr) {
+		toggleAr();
+	} else if (event.key === "Escape" && s.panoramaOpen) {
 		closePanorama();
 	} else if (event.key === "Escape" && s.explorerOpen) {
 		closeExplorer();
