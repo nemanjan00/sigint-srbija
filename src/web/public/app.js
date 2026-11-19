@@ -125,6 +125,7 @@ const s = state({
 	owner: "any",
 	activeOnly: true,
 	preciseOnly: false,
+	showDuplicates: false,
 	shown: 0,
 	total: 0,
 	// clicked spot: ids of all emitters under the cursor
@@ -166,7 +167,8 @@ const readFilter = () => {
 		owner: s.owner,
 		range: frequencyRange(),
 		activeOnly: s.activeOnly,
-		preciseOnly: s.preciseOnly
+		preciseOnly: s.preciseOnly,
+		showDuplicates: s.showDuplicates
 	};
 };
 
@@ -192,6 +194,11 @@ const matches = (filter, row, index) => {
 	}
 
 	if (filter.activeOnly && row.active === 0) {
+		return false;
+	}
+
+	// one pin per station: other sources' listings of it are shown in its details
+	if (!filter.showDuplicates && row.duplicate_of !== null) {
 		return false;
 	}
 
@@ -554,6 +561,10 @@ const filterParams = () => {
 		params.set("precise", s.preciseOnly ? "1" : "0");
 	}
 
+	if (s.showDuplicates) {
+		params.set("dups", "1");
+	}
+
 	return params;
 };
 
@@ -583,6 +594,7 @@ const applyFilterQuery = (search) => {
 	s.owner = ["public", "private"].includes(params.get("owner")) ? params.get("owner") : "any";
 	s.activeOnly = params.has("active") ? params.get("active") === "1" : DEFAULT_FILTER.activeOnly;
 	s.preciseOnly = params.has("precise") ? params.get("precise") === "1" : DEFAULT_FILTER.preciseOnly;
+	s.showDuplicates = params.get("dups") === "1";
 };
 
 const viewParam = () => {
@@ -913,6 +925,7 @@ const resetFilters = () => {
 	s.owner = "any";
 	s.activeOnly = true;
 	s.preciseOnly = false;
+	s.showDuplicates = false;
 };
 
 const switchRow = (id, label, hint, binding) => {
@@ -989,7 +1002,8 @@ const filterPanel = () => {
 		Separator({ class: "bg-white/5" }),
 		el("div", { class: "grid gap-4" },
 			switchRow("active-only", "Valid licences only", "Hide expired RATEL licences", [s, "activeOnly"]),
-			switchRow("precise-only", "Precise positions only", "Hide city-level / grid-square guesses", [s, "preciseOnly"])),
+			switchRow("precise-only", "Precise positions only", "Hide city-level / grid-square guesses", [s, "preciseOnly"]),
+			switchRow("show-duplicates", "Show every listing", "One pin per source instead of one per station", [s, "showDuplicates"])),
 		Separator({ class: "bg-white/5" }),
 		section("Data",
 			el("div", { class: "grid gap-1.5 text-xs" },
@@ -1137,6 +1151,42 @@ const rawBlock = (raw) => {
 		el("pre", { class: "thin-scroll max-h-72 overflow-auto px-3 pb-3 text-[11px] leading-relaxed text-muted-foreground" }, JSON.stringify(raw, null, 2)));
 };
 
+// Other sources' listings of the same station; differing frequencies are highlighted
+const listingsBlock = (detail) => {
+	if (!detail.listings || detail.listings.length === 0) {
+		return null;
+	}
+
+	const differs = (a, b) => {
+		return a !== null && b !== null && a !== b;
+	};
+
+	return el("div", { class: "grid gap-1.5" },
+		el("div", { class: "text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground" }, "Also listed by"),
+		...detail.listings.map((listing) => {
+			const source = SOURCES[listing.source] || { label: listing.source, color: "#94a3b8" };
+			const txDiffers = differs(listing.tx_hz, detail.tx_hz);
+			const rxDiffers = differs(listing.rx_hz, detail.rx_hz);
+
+			return el("button", {
+				class: "group grid w-full gap-1 rounded-lg border border-white/5 bg-black/20 px-3 py-2 text-left hover:border-white/15",
+				onclick: () => {
+					loadDetail(listing.id);
+				}
+			},
+			el("div", { class: "flex items-center gap-2 text-sm" },
+				el("span", { class: "dot !size-2", style: "color:" + source.color }),
+				el("span", { class: "flex-1 font-medium" }, source.label),
+				listing.duplicate_of === null ? el("span", { class: "text-[10px] uppercase tracking-wider text-muted-foreground" }, "main listing") : null,
+				ChevronRightIcon({ class: "size-4 text-muted-foreground opacity-0 group-hover:opacity-100" })),
+			el("div", { class: "flex flex-wrap gap-x-4 font-mono text-xs text-muted-foreground" },
+				el("span", { class: txDiffers ? "text-amber-400" : "" }, "TX " + formatMhz(listing.tx_hz)),
+				el("span", { class: rxDiffers ? "text-amber-400" : "" }, "RX " + formatMhz(listing.rx_hz)),
+				listing.callsign && listing.callsign !== detail.callsign ? el("span", {}, listing.callsign) : null),
+			txDiffers || rxDiffers ? el("span", { class: "text-[11px] text-amber-400/90" }, "Frequency differs from this listing — one of the sources has a typo") : null);
+		}));
+};
+
 const sectorLabel = (id) => {
 	const sector = data.lookups.sectors.find((candidate) => {
 		return candidate.id === id;
@@ -1169,7 +1219,7 @@ const detailView = (detail) => {
 		frequencyBlock(detail),
 		el("div", { class: "grid" },
 			field(detail.kind === "licence" ? "Transmitter site" : "Site", detail.location),
-			field("Callsign", detail.callsign, { mono: true }),
+			field("Callsign", detail.callsign || (detail.kind === "licence" ? "not published in the register" : null), { mono: Boolean(detail.callsign) }),
 			field("DMR ID", detail.dmr_id, { mono: true }),
 			field("Name", detail.name && detail.name !== detail.callsign ? detail.name : null),
 			field("Operator", detail.source !== "ratel-reg203" ? detail.operator : null),
@@ -1181,6 +1231,7 @@ const detailView = (detail) => {
 					copyButton(coordinates),
 					el("a", { class: "text-[11px] text-primary hover:underline", target: "_blank", rel: "noreferrer", href: "https://www.openstreetmap.org/?mlat=" + detail.lat + "&mlon=" + detail.lon + "#map=15/" + detail.lat + "/" + detail.lon }, "OSM ↗"))) : null,
 			field("Position from", coordinateSourceLabel(detail) + (detail.coord_accuracy_m ? " · ±" + formatNumber(detail.coord_accuracy_m) + " m" : ""))),
+		listingsBlock(detail),
 		licenceBlock(detail),
 		rawBlock(detail.raw));
 };
@@ -1267,7 +1318,8 @@ const activeFilterCount = () => {
 		s.sectors.length > 0,
 		s.owner !== "any",
 		s.activeOnly !== DEFAULT_FILTER.activeOnly,
-		s.preciseOnly !== DEFAULT_FILTER.preciseOnly
+		s.preciseOnly !== DEFAULT_FILTER.preciseOnly,
+		s.showDuplicates
 	];
 
 	return changed.filter(Boolean).length;

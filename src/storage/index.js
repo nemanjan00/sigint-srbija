@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS emitters (
 	active            INTEGER,            -- 1 / 0, NULL if unknown
 	sector            TEXT,               -- who operates it: amateur, energy, health, ... (see src/reg203/sector)
 	owner             TEXT,               -- amateur | public | private
+	duplicate_of      INTEGER,            -- emitters.id of the canonical listing of the same station (set by src/geo)
 	raw               TEXT,               -- source record as JSON
 	UNIQUE (source, source_key)
 );
@@ -60,7 +61,7 @@ const EMITTER_COLUMNS = [
 ];
 
 // Columns added after the first release; created on open when missing
-const ADDED_COLUMNS = { sector: "TEXT", owner: "TEXT" };
+const ADDED_COLUMNS = { sector: "TEXT", owner: "TEXT", duplicate_of: "INTEGER" };
 
 const migrate = (db) => {
 	const existing = db.prepare("PRAGMA table_info(emitters)").all().map((column) => {

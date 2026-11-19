@@ -3,7 +3,7 @@ const storage = require("../../storage");
 const sector = require("../../reg203/sector");
 
 // Columns sent to the browser for every point, in this order
-const MAP_COLUMNS = ["id", "lat", "lon", "source", "kind", "mode", "tx_hz", "tx_high_hz", "active", "callsign", "operator", "location", "station_type", "service_type", "sector", "owner", "coord_accuracy_m"];
+const MAP_COLUMNS = ["id", "lat", "lon", "source", "kind", "mode", "tx_hz", "tx_high_hz", "active", "callsign", "operator", "location", "station_type", "service_type", "sector", "owner", "coord_accuracy_m", "duplicate_of"];
 
 let cache = null;
 
@@ -44,7 +44,7 @@ const getMapData = () => {
 	const rows = db.prepare(`SELECT id, lat, lon, source, kind, mode, tx_hz, tx_high_hz, active, callsign, operator, location,
 			CASE WHEN source = 'ratel-reg203' THEN substr(raw->>'vrsta', 1, instr(raw->>'vrsta' || '/', '/') - 1) END AS station_type,
 			CASE WHEN source = 'ratel-reg203' AND instr(raw->>'vrsta', '/') > 0 THEN substr(raw->>'vrsta', instr(raw->>'vrsta', '/') + 1) END AS service_type,
-			sector, owner, coord_accuracy_m
+			sector, owner, coord_accuracy_m, duplicate_of
 		FROM emitters WHERE lat IS NOT NULL`).all().map((row) => {
 		return MAP_COLUMNS.map((column) => {
 			return row[column];
@@ -72,6 +72,11 @@ const getEmitter = (id) => {
 	}
 
 	const result = Object.assign({}, emitter, { raw: emitter.raw ? JSON.parse(emitter.raw) : null });
+	const canonical = emitter.duplicate_of || emitter.id;
+
+	// every listing of the same station (canonical first), except this one
+	result.listings = db.prepare(`SELECT id, source, source_key, callsign, name, tx_hz, rx_hz, location, lat, lon, coord_source, duplicate_of
+		FROM emitters WHERE (id = ? OR duplicate_of = ?) AND id != ? ORDER BY duplicate_of IS NOT NULL, id`).all(canonical, canonical, emitter.id);
 
 	if (emitter.source === "ratel-reg203" && result.raw && result.raw.id) {
 		result.detail = db.prepare(`SELECT a.*, st.name AS vrsta_stanice_naziv, sv.name AS vrsta_sluzbe_naziv

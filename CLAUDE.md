@@ -25,6 +25,10 @@ One SQLite database, `data/sigint.sqlite` (gitignored), `src/storage`:
 - `sources` — id, url, fetched_at, emitter_count.
 - Detail tables of big sources live in the same DB with a prefix (`reg203_*`).
 
+## Duplicates (`src/geo`, runs after every fetch)
+
+The same station is often listed by several sources (SRS map, BrandMeister, SRS table). `emitters.duplicate_of` links each listing to the best-ranked listing of the same station (rank = `DONORS` order, then everything else). Same station = same DMR ID, or same callsign + kind with TX within 250 kHz (sources have frequency typos), or same TX within 2 kHz + place name. The map shows one pin per station (`?dups=1` shows all); details list the other listings and flag differing frequencies. Licences are never linked.
+
 ## Coordinates (`src/geo`, runs after every fetch)
 
 Rows with `coord_source = 'source'` got coordinates from their own source. Rows without coordinates are filled from other sources and recomputed each run, in this order: same DMR ID → same callsign (+ compatible TX) → same TX + place name → gazetteer → Maidenhead locator. Donor sources: `yu1srs-map`, then `brandmeister`. `coord_source` records how (e.g. `yu1srs-map:callsign`).
