@@ -6,6 +6,7 @@ import {
 	Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 	SearchIcon, XIcon, ArrowLeftIcon, ChevronRightIcon
 } from "https://cdn.jsdelivr.net/npm/@nemanjan00/qrp-shadcdn@0.4.1/dist/qrp-shadcdn.js/+esm";
+import { createSpectrum, formatHz, CATEGORY_LEGEND } from "/spectrum.js";
 
 const maplibregl = window.maplibregl;
 
@@ -141,7 +142,8 @@ const s = state({
 	selection: [],
 	selectionKey: "",
 	detailId: null,
-	detail: null
+	detail: null,
+	explorerOpen: false
 });
 
 const frequencyRange = () => {
@@ -456,6 +458,27 @@ const setSelectedMarker = (row) => {
 
 let filterTimer = null;
 
+// Main listings without a frequency (SRS map pins) borrow it from a duplicate listing
+let frequencyOfDuplicates = null;
+
+const withFrequency = (row) => {
+	if (row.tx_hz) {
+		return row;
+	}
+
+	if (!frequencyOfDuplicates) {
+		frequencyOfDuplicates = new Map();
+		data.rows.forEach((candidate) => {
+			if (candidate.duplicate_of !== null && candidate.tx_hz && !frequencyOfDuplicates.has(candidate.duplicate_of)) {
+				frequencyOfDuplicates.set(candidate.duplicate_of, { tx_hz: candidate.tx_hz, tx_high_hz: candidate.tx_high_hz });
+			}
+		});
+	}
+
+	const borrowed = frequencyOfDuplicates.get(row.id);
+	return borrowed ? Object.assign({}, row, borrowed) : row;
+};
+
 const applyFilter = (filter) => {
 	const features = data.features.filter((_, index) => {
 		return matches(filter, data.rows[index], index);
@@ -465,6 +488,12 @@ const applyFilter = (filter) => {
 		map.getSource("emitters").setData({ type: "FeatureCollection", features: features });
 	}
 
+	data.visible = features.map((feature) => {
+		return withFrequency(data.byId.get(feature.properties.id));
+	});
+	[panelExplorer, fullExplorer].filter(Boolean).forEach((explorer) => {
+		explorer.setSignals(data.visible);
+	});
 	s.shown = features.length;
 };
 
@@ -574,6 +603,10 @@ const filterParams = () => {
 		params.set("dups", "1");
 	}
 
+	if (s.explorerOpen && explorerView) {
+		params.set("spectrum", explorerView);
+	}
+
 	return params;
 };
 
@@ -604,6 +637,8 @@ const applyFilterQuery = (search) => {
 	s.activeOnly = params.has("active") ? params.get("active") === "1" : DEFAULT_FILTER.activeOnly;
 	s.preciseOnly = params.has("precise") ? params.get("precise") === "1" : DEFAULT_FILTER.preciseOnly;
 	s.showDuplicates = params.get("dups") === "1";
+	explorerView = /^[\d.]+,[\d.]+$/.test(params.get("spectrum") || "") ? params.get("spectrum") : "";
+	s.explorerOpen = explorerView !== "";
 };
 
 const viewParam = () => {
@@ -673,14 +708,15 @@ const fetchJson = (url) => {
 	});
 };
 
-const loadDetail = (id) => {
+// options.fly: move the map to it (opened from the spectrum, not from the map)
+const loadDetail = (id, options) => {
 	s.detailId = id;
 	s.detail = null;
 	setSelectedMarker(data.byId.get(id));
 
 	return fetchJson("/api/emitters/" + id).then((detail) => {
 		if (s.detailId === id) {
-			showDetail(detail, { push: true });
+			showDetail(detail, Object.assign({ push: true }, options));
 		}
 	});
 };
@@ -1050,6 +1086,9 @@ const filterPanel = () => {
 				el("h1", { class: "glow-text text-lg font-bold tracking-tight" }, "SIGINT Srbija"),
 				el("span", { class: "text-xs text-muted-foreground" }, "Public signal sources in Serbia")),
 			el("div", { class: "flex items-center gap-1" },
+				Button({ variant: "outline", size: "sm", class: "h-7 rounded-full px-3 text-xs", onclick: () => {
+					openExplorer(s.detail ? selectionOf(s.detail) : null);
+				} }, "Spectrum"),
 				mcpDialog(),
 				Button({ variant: "ghost", size: "sm", class: "text-xs text-muted-foreground", onclick: resetFilters }, "Reset"))),
 		el("div", { class: "flex items-baseline gap-1.5" },
@@ -1182,7 +1221,7 @@ const frequencyBlock = (detail) => {
 		shift !== null ? el("div", { class: "text-xs text-muted-foreground" }, "Shift ", el("span", { class: "font-mono text-foreground" }, (shift > 0 ? "+" : "") + shift.toFixed(4).replace(/0+$/, "").replace(/\.$/, "") + " MHz")) : null);
 };
 
-// --- spectrum: band plan, listening hints, band and channel bars -------------
+// --- spectrum: band plan, listening hints, interactive explorer ------------
 
 const USER_COLORS = {
 	"Police (MUP)": "#60a5fa",
@@ -1191,164 +1230,77 @@ const USER_COLORS = {
 	"Security agency (BIA)": "#c084fc",
 	"Anyone": "#94a3b8"
 };
-const SEGMENT_COLOR = "#94a3b8";
-// Share of a channel left empty on each side, so neighbours stay apart
-const CHANNEL_GAP = 0.08;
-// Smallest drawn width of a signal, as a share of the bar
-const MIN_SIGNAL_SHARE = 0.006;
-
-const formatHz = (hz) => {
-	if (hz >= 1e9) {
-		return Number((hz / 1e9).toPrecision(7)) + " GHz";
-	}
-
-	if (hz >= 1e6) {
-		return Number((hz / 1e6).toPrecision(7)) + " MHz";
-	}
-
-	if (hz >= 1e3) {
-		return Number((hz / 1e3).toPrecision(7)) + " kHz";
-	}
-
-	return hz + " Hz";
-};
-
-const svg = (tag, attributes, ...children) => {
-	const node = document.createElementNS(SVG_NS, tag);
-
-	Object.keys(attributes || {}).forEach((name) => {
-		if (name === "onclick") {
-			node.addEventListener("click", attributes[name]);
-		} else if (attributes[name] !== null && attributes[name] !== undefined) {
-			node.setAttribute(name, attributes[name]);
-		}
-	});
-	children.filter(Boolean).forEach((child) => {
-		node.appendChild(child);
-	});
-
-	return node;
-};
-
-const svgTitle = (text) => {
-	const node = document.createElementNS(SVG_NS, "title");
-	node.textContent = text;
-	return node;
-};
-
-const segmentColor = (use) => {
-	return USER_COLORS[use.users[0]] || SEGMENT_COLOR;
-};
+// Show the emitter's whole band when it is at most this many signal widths wide
+const MAX_BAND_SIGNALS = 1000;
+const FOCUS_SPAN_SIGNALS = 400;
 
 const useName = (use) => {
 	return use.en || use.application || "Unspecified";
 };
 
-// Axis labels under a bar: low, middle, high
-const axis = (low, middle, high) => {
-	return el("div", { class: "flex justify-between gap-2 font-mono text-[10px] text-muted-foreground" },
-		el("span", {}, low), el("span", { class: "truncate text-center text-foreground/80" }, middle), el("span", {}, high));
+let bandplanRequest = null;
+
+const loadBandplan = () => {
+	if (!bandplanRequest) {
+		bandplanRequest = fetchJson("/api/bandplan");
+	}
+
+	return bandplanRequest;
 };
 
-/**
- * Bar over [low, high] Hz, drawn in a 1000-wide viewBox stretched to the panel.
- * x() maps Hz to the viewBox; widths never drop under MIN_SIGNAL_SHARE.
- */
-const scale = (low, high) => {
-	const x = (hz) => {
-		return Math.min(1000, Math.max(0, (hz - low) / (high - low) * 1000));
-	};
-	const span = (from, to) => {
-		const width = Math.max(x(to) - x(from), MIN_SIGNAL_SHARE * 1000);
-		const centre = (x(from) + x(to)) / 2;
-		return { x: Math.max(0, centre - width / 2), width: width };
-	};
-	return { x: x, span: span };
+// Signals drawn in the explorers: what the map shows (filters apply)
+const visibleRows = () => {
+	return data.visible || data.rows;
 };
 
-// Whole band: sub-allocations (coloured by user group), how many emitters we know per slice, this emitter
-const bandBar = (detail, spectrum) => {
-	const band = spectrum.band;
-	const bar = scale(band.low_hz, band.high_hz);
-	const height = 48;
-	const peak = Math.max(1, ...spectrum.overview);
-	const sliceWidth = 1000 / spectrum.overview.length;
-	const bandwidth = spectrum.bandwidth ? spectrum.bandwidth.hz : 0;
-	const centre = detail.tx_high_hz ? (detail.tx_hz + detail.tx_high_hz) / 2 : detail.tx_hz;
-	const me = bar.span(centre - bandwidth / 2, centre + bandwidth / 2);
-	const segments = band.uses.filter((use) => {
-		return use.ranges.length > 0 && !use.background;
+// One explorer lives in the details panel and moves with it; created on first use
+let panelExplorer = null;
+
+const explorerFor = (plan) => {
+	if (!panelExplorer) {
+		panelExplorer = createSpectrum({ plan: plan, kinds: KINDS, onOpen: (id) => {
+			loadDetail(id, { fly: true });
+		} });
+		panelExplorer.setSignals(visibleRows());
+	}
+
+	return panelExplorer;
+};
+
+// Emitter as a highlighted span on the explorer
+const selectionOf = (detail) => {
+	const width = detail.spectrum && detail.spectrum.bandwidth ? detail.spectrum.bandwidth.hz : 12500;
+	const hasRange = detail.tx_high_hz && detail.tx_high_hz > detail.tx_hz;
+	const centre = hasRange ? (detail.tx_hz + detail.tx_high_hz) / 2 : detail.tx_hz;
+	const half = hasRange ? (detail.tx_high_hz - detail.tx_hz) / 2 : width / 2;
+
+	return { low: centre - half, high: centre + half, centre: centre, width: hasRange ? half * 2 : width, rx: detail.rx_hz && detail.rx_hz !== detail.tx_hz ? detail.rx_hz : null };
+};
+
+// Start on the emitter's band, or around the emitter when the band is huge
+const focusOn = (explorer, selection) => {
+	const band = explorer.bandAt(selection.centre);
+
+	if (band && band.high_hz - band.low_hz <= selection.width * MAX_BAND_SIGNALS) {
+		explorer.showBand(band);
+	} else {
+		explorer.centre(selection.centre, selection.width * FOCUS_SPAN_SIGNALS);
+	}
+};
+
+const explorerSlot = (detail) => {
+	const slot = el("div", { class: "h-56 w-full" });
+
+	loadBandplan().then((plan) => {
+		const explorer = explorerFor(plan);
+		const selection = selectionOf(detail);
+
+		slot.appendChild(explorer.element);
+		explorer.setSelected(selection);
+		focusOn(explorer, selection);
 	});
 
-	return el("div", { class: "grid gap-1" },
-		svg("svg", { viewBox: "0 0 1000 " + height, preserveAspectRatio: "none", class: "h-12 w-full overflow-visible rounded-md" },
-			svg("rect", { x: 0, y: 0, width: 1000, height: height, fill: "rgb(255 255 255 / 0.04)" }),
-			...segments.reduce((result, use) => {
-				return result.concat(use.ranges.map((range) => {
-					const box = bar.span(range.low_hz, range.high_hz);
-					return svg("rect", { x: box.x, y: 0, width: box.width, height: height, fill: segmentColor(use), "fill-opacity": use.here ? 0.22 : 0.1 },
-						svgTitle(useName(use) + (use.users.length ? " — " + use.users.join(", ") : "") + "\n" + formatHz(range.low_hz) + " – " + formatHz(range.high_hz)));
-				}));
-			}, []),
-			...spectrum.overview.map((count, index) => {
-				const barHeight = count ? 4 + Math.log(1 + count) / Math.log(1 + peak) * (height - 8) : 0;
-				return count ? svg("rect", { x: index * sliceWidth + sliceWidth * 0.15, y: height - barHeight, width: sliceWidth * 0.7, height: barHeight, fill: "rgb(226 232 240 / 0.45)" },
-					svgTitle(formatNumber(count) + " known transmitters\n" + formatHz(band.low_hz + index * (band.high_hz - band.low_hz) / spectrum.overview.length))) : null;
-			}),
-			detail.rx_hz && detail.rx_hz !== detail.tx_hz && detail.rx_hz >= band.low_hz && detail.rx_hz < band.high_hz ?
-				svg("line", { x1: bar.x(detail.rx_hz), x2: bar.x(detail.rx_hz), y1: 0, y2: height, stroke: "var(--primary)", "stroke-width": 1.5, "stroke-dasharray": "3 3", "vector-effect": "non-scaling-stroke" }, svgTitle("RX (input) " + formatMhz(detail.rx_hz) + " MHz")) : null,
-			svg("rect", { x: me.x, y: 0, width: me.width, height: height, fill: "var(--primary)", class: "drop-shadow-[0_0_6px_var(--primary)]" }, svgTitle("This emitter, TX " + formatRange(detail.tx_hz, detail.tx_high_hz) + " MHz"))),
-		axis(formatHz(band.low_hz), "", formatHz(band.high_hz)),
-		segments.length ? el("div", { class: "flex flex-wrap gap-x-3 gap-y-1 pt-1 text-[11px] text-muted-foreground" },
-			...segments.map((use) => {
-				return el("span", { class: "flex items-center gap-1.5" + (use.here ? " text-foreground/90" : "") },
-					el("span", { class: "size-2 flex-none rounded-sm", style: "background:" + segmentColor(use) }),
-					useName(use) + (use.users.length ? " · " + use.users.join(", ") : "") + " ",
-					el("span", { class: "font-mono" }, use.ranges.map((range) => {
-						return formatMhz(range.low_hz) + "–" + formatMhz(range.high_hz);
-					}).join(", ")));
-			})) : null);
-};
-
-// Zoomed window around the emitter: every known frequency, height = how many use it
-const channelBar = (detail, spectrum) => {
-	const window = spectrum.window;
-	const bar = scale(window.low_hz, window.high_hz);
-	const height = 56;
-	const bandwidth = spectrum.bandwidth ? spectrum.bandwidth.hz : 0;
-	const peak = Math.max(1, ...window.signals.map((signal) => {
-		return signal.count;
-	}));
-
-	return el("div", { class: "grid gap-1" },
-		svg("svg", { viewBox: "0 0 1000 " + height, preserveAspectRatio: "none", class: "h-14 w-full overflow-visible rounded-md" },
-			svg("rect", { x: 0, y: 0, width: 1000, height: height, fill: "rgb(255 255 255 / 0.04)" }),
-			svg("line", { x1: 500, x2: 500, y1: 0, y2: height, stroke: "rgb(255 255 255 / 0.12)", "vector-effect": "non-scaling-stroke" }),
-			...window.signals.map((signal) => {
-				const self = signal.tx_hz === detail.tx_hz;
-				const low = signal.tx_high_hz > signal.tx_hz ? signal.tx_hz : signal.tx_hz - bandwidth / 2;
-				const high = signal.tx_high_hz > signal.tx_hz ? signal.tx_high_hz : signal.tx_hz + bandwidth / 2;
-				const box = bar.span(low + (high - low) * CHANNEL_GAP, high - (high - low) * CHANNEL_GAP);
-				const barHeight = self ? height : 10 + Math.log(1 + signal.count) / Math.log(1 + peak) * (height - 18);
-				const color = self ? "var(--primary)" : (KINDS[signal.kind] || KINDS.licence).color;
-				const clickable = !self && signal.id !== null;
-				const label = formatMhz(signal.tx_hz) + " MHz · " + (signal.label || "unnamed") + (signal.count > 1 ? " +" + (signal.count - 1) + " more" : "") + (signal.id === null ? " (mobile, no position)" : "");
-
-				return svg("rect", {
-					x: box.x,
-					y: height - barHeight,
-					width: box.width,
-					height: barHeight,
-					rx: 1.5,
-					fill: color,
-					"fill-opacity": self ? 1 : 0.55,
-					class: clickable ? "cursor-pointer hover:fill-opacity-100" : null,
-					onclick: clickable ? () => {
-						loadDetail(signal.id);
-					} : null
-				}, svgTitle(label + (clickable ? "\nClick to open" : "")));
-			})),
-		axis(formatMhz(window.low_hz), formatMhz(detail.tx_hz) + " MHz", formatMhz(window.high_hz)));
+	return slot;
 };
 
 const useRow = (use) => {
@@ -1394,8 +1346,14 @@ const spectrumBlock = (detail) => {
 				el("span", { class: "font-mono text-foreground" }, (spectrum.bandwidth.how === "licensed block" ? "" : "~") + formatHz(spectrum.bandwidth.hz)),
 				" · " + spectrum.bandwidth.how) : null) : null,
 		el("div", { class: "grid gap-2" },
-			el("div", { class: "flex items-baseline justify-between gap-2" }, SubHeading("Band"), el("span", { class: "font-mono text-xs text-muted-foreground" }, band.label)),
-			bandBar(detail, spectrum),
+			el("div", { class: "flex items-center justify-between gap-2" },
+				SubHeading("Spectrum"),
+				Button({ variant: "ghost", size: "sm", class: "h-6 px-2 text-[11px] text-muted-foreground", onclick: () => {
+					openExplorer(selectionOf(detail));
+				} }, "Expand ↗")),
+			explorerSlot(detail),
+			el("span", { class: "text-[11px] text-muted-foreground" }, "Scroll or pinch to zoom, drag to pan. Click a band to fit it, a signal to open it."),
+			el("div", { class: "flex items-baseline justify-between gap-2 pt-1" }, SubHeading("Band"), el("span", { class: "font-mono text-xs text-muted-foreground" }, band.label)),
 			el("div", { class: "flex flex-wrap gap-1.5" },
 				...band.services.map((service) => {
 					return Badge({
@@ -1404,10 +1362,6 @@ const spectrumBlock = (detail) => {
 						title: service.name + (service.primary ? " (primary)" : " (secondary)")
 					}, service.primary ? service.en.toUpperCase() : service.en.charAt(0).toUpperCase() + service.en.slice(1));
 				}))),
-		el("div", { class: "grid gap-2" },
-			SubHeading("Nearby channels"),
-			channelBar(detail, spectrum),
-			el("span", { class: "text-[11px] text-muted-foreground" }, "Bar height = how many transmitters use that frequency. Click one to open it.")),
 		el("div", { class: "grid gap-1.5" },
 			SubHeading("Band plan at this frequency"),
 			...(here.length ? here.map(useRow) : [el("span", { class: "text-sm text-muted-foreground" }, "No specific use listed")]),
@@ -1719,6 +1673,140 @@ const mobileBar = () => {
 			el("span", { class: "font-mono text-foreground" }, () => formatNumber(s.shown)), " shown"));
 };
 
+// --- UI: full-screen spectrum explorer -------------------------------------
+
+const EXPLORER_PRESETS = [
+	{ label: "All", low: 3e3, high: 3e12 },
+	{ label: "LF/MF", low: 30e3, high: 3e6 },
+	{ label: "HF", low: 3e6, high: 30e6 },
+	{ label: "VHF", low: 30e6, high: 300e6 },
+	{ label: "UHF", low: 300e6, high: 3e9 },
+	{ label: "SHF", low: 3e9, high: 30e9 },
+	{ label: "EHF", low: 30e9, high: 300e9 },
+	{ label: "FM radio", low: 87.5e6, high: 108e6 },
+	{ label: "Airband", low: 108e6, high: 137e6 },
+	{ label: "2 m", low: 144e6, high: 146e6 },
+	{ label: "70 cm", low: 430e6, high: 440e6 },
+	{ label: "PMR446", low: 446e6, high: 446.2e6 },
+	{ label: "TV", low: 470e6, high: 694e6 },
+	{ label: "Cellular", low: 700e6, high: 3.8e9 }
+];
+const EXPLORER_URL_DELAY = 300;
+
+// "low,high" in MHz of the open explorer (in the URL as ?spectrum=)
+let explorerView = "";
+let explorerStart = null;
+let fullExplorer = null;
+let explorerUrlTimer = 0;
+
+const mhzText = (hz) => {
+	return String(Number((hz / 1e6).toPrecision(9)));
+};
+
+// selection: emitter span to highlight and centre on, or null for the current / default view
+const openExplorer = (selection) => {
+	explorerStart = selection;
+	s.explorerOpen = true;
+};
+
+const closeExplorer = () => {
+	s.explorerOpen = false;
+	explorerView = "";
+	replaceUrl();
+};
+
+const legendDot = (color, label, square) => {
+	return el("span", { class: "flex items-center gap-1.5 whitespace-nowrap" },
+		el("span", { class: (square ? "size-2.5 rounded-sm" : "dot !size-2") + " flex-none", style: square ? "background:" + color : "color:" + color }), label);
+};
+
+const explorerOverlay = () => {
+	return when(() => s.explorerOpen, () => {
+		const slot = el("div", { class: "min-h-0 flex-1" });
+		const readout = el("span", { class: "font-mono text-xs text-muted-foreground" }, "");
+		const goTo = Input({
+			placeholder: "Go to MHz…",
+			inputmode: "decimal",
+			class: "h-8 w-32 font-mono text-xs",
+			onkeydown: (event) => {
+				const mhz = Number(event.currentTarget.value.replace(",", "."));
+
+				if (event.key === "Enter" && mhz > 0 && fullExplorer) {
+					fullExplorer.centre(mhz * 1e6, Math.max(mhz * 1e6 * 0.002, 100e3));
+				}
+			}
+		});
+		loadBandplan().then((plan) => {
+			if (!fullExplorer) {
+				fullExplorer = createSpectrum({
+					plan: plan,
+					kinds: KINDS,
+					onOpen: (id) => {
+						closeExplorer();
+						loadDetail(id, { fly: true });
+					},
+					onView: (view) => {
+						explorerView = mhzText(view.low) + "," + mhzText(view.high);
+						readout.textContent = formatHz(view.low, 7) + " – " + formatHz(view.high, 7);
+						clearTimeout(explorerUrlTimer);
+						explorerUrlTimer = setTimeout(replaceUrl, EXPLORER_URL_DELAY);
+					}
+				});
+				fullExplorer.setSignals(visibleRows());
+			}
+
+			const fromUrl = explorerView.split(",").map(Number);
+			slot.appendChild(fullExplorer.element);
+			fullExplorer.setSelected(explorerStart);
+
+			if (explorerStart) {
+				focusOn(fullExplorer, explorerStart);
+			} else if (fromUrl.length === 2 && fromUrl[1] > fromUrl[0]) {
+				fullExplorer.setView(fromUrl[0] * 1e6, fromUrl[1] * 1e6);
+			} else {
+				fullExplorer.setView(3e3, 3e12);
+			}
+		});
+
+		return el("div", { class: "panel fixed inset-0 z-40 flex flex-col gap-3 p-3 md:inset-6 md:rounded-2xl md:p-4" },
+			el("div", { class: "flex flex-wrap items-center gap-2" },
+				el("h2", { class: "mr-2 text-base font-semibold tracking-tight" }, el("span", { class: "glow-text" }, "Spectrum"), " explorer"),
+				el("div", { class: "flex flex-wrap gap-1" },
+					...EXPLORER_PRESETS.map((preset) => {
+						return Button({ variant: "secondary", size: "sm", class: "h-7 rounded-full px-2.5 text-xs", onclick: () => {
+							fullExplorer.setView(preset.low, preset.high);
+						} }, preset.label);
+					})),
+				el("div", { class: "ml-auto flex items-center gap-1" },
+					goTo,
+					Button({ variant: "outline", size: "icon", class: "size-8", "aria-label": "Zoom out", onclick: () => {
+						fullExplorer.zoom(2);
+					} }, "−"),
+					Button({ variant: "outline", size: "icon", class: "size-8", "aria-label": "Zoom in", onclick: () => {
+						fullExplorer.zoom(0.5);
+					} }, "+"),
+					Button({ variant: "ghost", size: "icon", class: "size-8", onclick: closeExplorer, "aria-label": "Close" }, XIcon({ class: "size-4" })))),
+			slot,
+			el("div", { class: "flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground" },
+				readout,
+				el("span", { class: "text-white/20" }, "|"),
+				...CATEGORY_LEGEND.map((category) => {
+					return legendDot(category.color, category.label, true);
+				}),
+				el("span", { class: "text-white/20" }, "|"),
+				...Object.keys(USER_COLORS).filter((user) => {
+					return user !== "Anyone";
+				}).map((user) => {
+					return legendDot(USER_COLORS[user], user, true);
+				}),
+				el("span", { class: "text-white/20" }, "|"),
+				...Object.keys(KINDS).map((kind) => {
+					return legendDot(KINDS[kind].color, KINDS[kind].label);
+				}),
+				el("span", { class: "basis-full md:basis-auto md:ml-auto" }, "Signals follow the map filters. Scroll / pinch to zoom, drag to pan, click a band to fit it, a signal to open it.")));
+	});
+};
+
 // --- UI: legend + loading ---------------------------------------------------
 
 const legend = () => {
@@ -1741,7 +1829,7 @@ const loadingView = () => {
 
 const app = () => {
 	return when(() => s.loading, loadingView, () => {
-		return el("div", { class: "contents" }, mobileBar(), filterPanel(), detailPanel(), legend());
+		return el("div", { class: "contents" }, mobileBar(), filterPanel(), detailPanel(), legend(), explorerOverlay());
 	});
 };
 
@@ -1784,7 +1872,10 @@ window.addEventListener("popstate", () => {
 });
 
 document.addEventListener("keydown", (event) => {
-	if (event.key === "Escape" && s.selection.length > 0) {
+	// Escape closes the topmost thing: explorer, then details, then filters
+	if (event.key === "Escape" && s.explorerOpen) {
+		closeExplorer();
+	} else if (event.key === "Escape" && s.selection.length > 0) {
 		closeSelection();
 	} else if (event.key === "Escape" && s.filtersOpen) {
 		s.filtersOpen = false;

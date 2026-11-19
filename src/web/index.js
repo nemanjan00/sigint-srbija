@@ -4,6 +4,7 @@ const express = require("express");
 const compression = require("compression");
 const emitters = require("./emitters");
 const mcp = require("../mcp");
+const bandplan = require("../bandplan");
 
 const PUBLIC_DIR = path.join(__dirname, "public");
 
@@ -25,6 +26,11 @@ app.get("/mcp", mcp.methodNotAllowed);
 app.delete("/mcp", mcp.methodNotAllowed);
 
 // Every emitter with coordinates, compact (see emitters.getMapData)
+app.get("/api/bandplan", (_req, res) => {
+	res.set("cache-control", "public, max-age=3600");
+	res.json(bandplan.getPlan());
+});
+
 app.get("/api/map", (_req, res) => {
 	res.set("cache-control", "no-cache");
 	res.json(emitters.getMapData());

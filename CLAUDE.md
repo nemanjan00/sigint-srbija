@@ -81,7 +81,8 @@ RATEL "Plan namene RF opsega — Tabela 1" (PDF, Dec 2025), parsed from `pdftote
 
 - `english` — ITU service names, a dictionary of every application (add new ones when the PDF changes: check `english.application()` returns non-null for all), user groups from the condition (police/MUP, military, emergency, BIA). Conditions stay in Serbian.
 - `hints` — "likely to hear" + typical bandwidth: the source's own mode wins (DMR/FM/APRS/beacon); licences use band-plan applications at the frequency ordered by reg203 station type (`STATION_TYPES.prefer`). A licensed TX range is used as the exact bandwidth.
-- `src/web/spectrum` adds `spectrum` to `GET /api/emitters/:id` (band entry, hints, 120-bin occupancy histogram of the band, neighbouring frequencies in a window of ±10 bandwidths); the detail panel draws the bars as SVG. MCP: `band_plan` tool, `get_emitter.spectrum`.
+- `src/web/spectrum` adds `spectrum` (band entry, hints, bandwidth) to `GET /api/emitters/:id`; `GET /api/bandplan` serves the whole plan translated (`bandplan.getPlan()`, ~45 kB gzipped). MCP: `band_plan` tool, `get_emitter.spectrum`.
+- Spectrum explorer `src/web/public/spectrum.js` (canvas, no deps): log-frequency axis 3 kHz–3 THz, lanes = band allocations (colour by first primary service, `CATEGORIES`), reserved sub-bands (user groups), wide blocks (TX range ≥ 2 MHz: cell bands, RLAN bands), signals (map rows grouped by centre + width, bandwidth estimated by `signalWidth`), ruler. Wheel/pinch zoom, drag pan, click band = fit, click signal = open + fly. One instance is moved into each detail panel; a second one is the full-screen overlay (header "Spectrum" button / "Expand"), view in the URL as `?spectrum=lowMHz,highMHz`. Signals = what the map shows (`data.visible`, filters apply); main listings without a frequency borrow one from a duplicate.
 
 ## Licence holder sector
 

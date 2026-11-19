@@ -102,7 +102,55 @@ const describe = (emitter) => {
 	return Object.assign({ band: band, plan: { title: meta.title || null, url: meta.url || null, date: meta.date || null } }, guess);
 };
 
+let compact = null;
+
+/**
+ * The whole plan translated, for the spectrum explorer in the browser:
+ * { plan: { title, url, date }, bands: [{ low_hz, high_hz, label, services: [{ en, sr, primary }],
+ *   footnotes, uses: [{ en, sr, condition, ranges, users, licensing, background }] }] }
+ */
+const getPlan = () => {
+	if (compact) {
+		return compact;
+	}
+
+	const meta = load();
+
+	compact = {
+		plan: { title: meta.title || null, url: meta.url || null, date: meta.date || null },
+		bands: meta.bands.map((band) => {
+			return {
+				low_hz: band.low_hz,
+				high_hz: band.high_hz,
+				label: band.label,
+				services: band.services.map((service) => {
+					return { en: english.service(service.name), sr: service.name, primary: service.primary };
+				}),
+				footnotes: band.footnotes,
+				uses: band.uses.map((use) => {
+					const en = english.application(use.application);
+
+					return {
+						en: en,
+						sr: use.application,
+						condition: use.condition,
+						ranges: use.ranges.map((range) => {
+							return [range.low_hz, range.high_hz];
+						}),
+						users: english.users(use.condition),
+						licensing: english.licensing(use.licensing),
+						background: BACKGROUND_USES.test(en || "")
+					};
+				})
+			};
+		})
+	};
+
+	return compact;
+};
+
 module.exports = {
+	getPlan: getPlan,
 	findBand: findBand,
 	lookup: lookup,
 	describe: describe

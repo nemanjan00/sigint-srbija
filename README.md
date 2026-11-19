@@ -76,11 +76,15 @@ PORT=3300 yarn web      # map on http://localhost:3300
 
   Back / Forward step through what you opened; **Share** copies the link.
 - Every emitter shows what you are likely to hear on its frequency (DMR, FM
-  repeater, APRS, airband, land mobile, …) with a typical bandwidth, the
+  repeater, APRS, airband, land mobile, …) with a typical bandwidth and the
   national band plan entry for that frequency (services, applications, who it is
   reserved for — police, military, emergency services — and how it is
-  licensed), a bar of the whole band with its sub-allocations and how busy it
-  is, and a zoomed bar of the neighbouring channels (click one to open it).
+  licensed).
+- **Spectrum explorer**: the whole national band plan from 3 kHz to 3 THz with
+  every known signal on it — scroll / pinch to zoom, drag to pan, hover for
+  details, click a signal to open it on the map. It opens on the clicked
+  emitter's band, full screen with **Spectrum** / **Expand**, and the view is part
+  of the link (`?spectrum=144,146`).
 - Works on phones: filters and details become bottom sheets.
 
 API used by the page:
