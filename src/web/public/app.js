@@ -7,6 +7,7 @@ import {
 	SearchIcon, XIcon, ArrowLeftIcon, ChevronRightIcon
 } from "https://cdn.jsdelivr.net/npm/@nemanjan00/qrp-shadcdn@0.4.1/dist/qrp-shadcdn.js/+esm";
 import { createSpectrum, formatHz, CATEGORY_LEGEND } from "/spectrum.js";
+import { createPanorama } from "/panorama.js";
 
 const maplibregl = window.maplibregl;
 
@@ -143,7 +144,12 @@ const s = state({
 	selectionKey: "",
 	detailId: null,
 	detail: null,
-	explorerOpen: false
+	explorerOpen: false,
+	panoramaOpen: false,
+	panoramaRadius: 10,
+	panoramaAr: false,
+	panoramaError: "",
+	panoramaSites: 0
 });
 
 const frequencyRange = () => {
@@ -494,6 +500,10 @@ const applyFilter = (filter) => {
 	[panelExplorer, fullExplorer].filter(Boolean).forEach((explorer) => {
 		explorer.setSignals(data.visible);
 	});
+
+	if (panorama) {
+		panorama.setRows(data.visible);
+	}
 	s.shown = features.length;
 };
 
@@ -607,6 +617,10 @@ const filterParams = () => {
 		params.set("spectrum", explorerView);
 	}
 
+	if (s.panoramaOpen && panoramaAt && !panoramaAt.mine) {
+		params.set("pano", panoramaAt.lat.toFixed(5) + "," + panoramaAt.lon.toFixed(5) + "," + s.panoramaRadius);
+	}
+
 	return params;
 };
 
@@ -639,6 +653,13 @@ const applyFilterQuery = (search) => {
 	s.showDuplicates = params.get("dups") === "1";
 	explorerView = /^[\d.]+,[\d.]+$/.test(params.get("spectrum") || "") ? params.get("spectrum") : "";
 	s.explorerOpen = explorerView !== "";
+
+	const pano = (params.get("pano") || "").split(",").map(Number);
+	if (pano.length === 3 && pano.every(Number.isFinite)) {
+		panoramaAt = { lat: pano[0], lon: pano[1], label: null, mine: false };
+		s.panoramaRadius = PANORAMA_RADII.includes(pano[2]) ? pano[2] : s.panoramaRadius;
+		s.panoramaOpen = true;
+	}
 };
 
 const viewParam = () => {
@@ -798,6 +819,10 @@ const shareLink = (event) => {
 };
 
 const wireMap = () => {
+	map.on("contextmenu", (event) => {
+		openPanorama({ lat: event.lngLat.lat, lon: event.lngLat.lng, label: null, mine: false });
+	});
+
 	const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12, maxWidth: "380px" });
 
 	// zoomed in, or a small cluster (often one site listed by several sources): list it instead of zooming
@@ -1089,6 +1114,7 @@ const filterPanel = () => {
 				Button({ variant: "outline", size: "sm", class: "h-7 rounded-full px-3 text-xs", onclick: () => {
 					openExplorer(s.detail ? selectionOf(s.detail) : null);
 				} }, "Spectrum"),
+				Button({ variant: "outline", size: "sm", class: "h-7 rounded-full px-3 text-xs", title: "RF panorama around your location (AR with the camera on phones)", onclick: openAroundMe }, "Around me"),
 				mcpDialog(),
 				Button({ variant: "ghost", size: "sm", class: "text-xs text-muted-foreground", onclick: resetFilters }, "Reset"))),
 		el("div", { class: "flex items-baseline gap-1.5" },
@@ -1558,7 +1584,10 @@ const detailView = (detail) => {
 				el("div", { class: "flex flex-wrap items-center gap-1" },
 					el("span", { class: "font-mono text-[13px]" }, coordinates),
 					copyButton(coordinates),
-					el("a", { class: "text-[11px] text-primary hover:underline", target: "_blank", rel: "noreferrer", href: "https://www.openstreetmap.org/?mlat=" + detail.lat + "&mlon=" + detail.lon + "#map=15/" + detail.lat + "/" + detail.lon }, "OSM ↗"))) : null,
+					el("a", { class: "text-[11px] text-primary hover:underline", target: "_blank", rel: "noreferrer", href: "https://www.openstreetmap.org/?mlat=" + detail.lat + "&mlon=" + detail.lon + "#map=15/" + detail.lat + "/" + detail.lon }, "OSM ↗"),
+					Button({ variant: "ghost", size: "sm", class: "h-6 px-2 text-[11px] text-primary", onclick: () => {
+						openPanorama({ lat: detail.lat, lon: detail.lon, label: titleOf(detail), mine: false });
+					} }, "Panorama from here"))) : null,
 			field("Position from", coordinateSourceLabel(detail) + (detail.coord_accuracy_m ? " · ±" + formatNumber(detail.coord_accuracy_m) + " m" : ""))),
 		listingsBlock(detail),
 		spectrumBlock(detail),
@@ -1667,7 +1696,8 @@ const mobileBar = () => {
 			"Filters",
 			when(() => activeFilterCount() > 0, () => {
 				return el("span", { class: "grid size-5 place-items-center rounded-full bg-primary font-mono text-[10px] text-primary-foreground" }, () => String(activeFilterCount()));
-			}))),
+			})),
+			Button({ variant: "secondary", class: "h-10 rounded-xl px-3", onclick: openAroundMe, "aria-label": "RF panorama around me" }, "Around")),
 		el("div", { class: "panel justify-self-start rounded-full px-3 py-1 text-xs text-muted-foreground" },
 			el("span", { class: "glow-text font-semibold" }, "SIGINT Srbija"), " · ",
 			el("span", { class: "font-mono text-foreground" }, () => formatNumber(s.shown)), " shown"));
@@ -1807,6 +1837,149 @@ const explorerOverlay = () => {
 	});
 };
 
+// --- UI: RF panorama (360° around a point, AR with the camera) ---------------
+
+const PANORAMA_RADII = [5, 10, 30, 80];
+
+// { lat, lon, label, mine } - mine: the user's own location (not put in the URL)
+let panoramaAt = null;
+let panorama = null;
+
+const openPanorama = (observer) => {
+	panoramaAt = observer;
+	s.panoramaError = "";
+	s.panoramaOpen = true;
+
+	if (panorama) {
+		panorama.setObserver(observer);
+	}
+
+	replaceUrl();
+};
+
+const closePanorama = () => {
+	if (panorama) {
+		panorama.stopAr();
+	}
+
+	s.panoramaAr = false;
+	s.panoramaOpen = false;
+	replaceUrl();
+};
+
+const locate = () => {
+	return new Promise((resolve, reject) => {
+		if (!navigator.geolocation) {
+			reject(new Error("This browser has no location access"));
+			return;
+		}
+
+		navigator.geolocation.getCurrentPosition((position) => {
+			resolve({ lat: position.coords.latitude, lon: position.coords.longitude, label: "your location", mine: true });
+		}, (error) => {
+			reject(new Error("Location unavailable: " + error.message));
+		}, { enableHighAccuracy: true, timeout: 15000 });
+	});
+};
+
+const openAroundMe = () => {
+	locate().then(openPanorama).catch((error) => {
+		openPanorama(panoramaAt || { lat: map.getCenter().lat, lon: map.getCenter().lng, label: "map centre", mine: false });
+		s.panoramaError = error.message;
+	});
+};
+
+// Camera + compass; follows GPS when looking around the user's own location
+const toggleAr = () => {
+	if (panorama.arActive()) {
+		panorama.stopAr();
+		s.panoramaAr = false;
+		return;
+	}
+
+	s.panoramaError = "";
+	panorama.startAr(Boolean(panoramaAt && panoramaAt.mine)).then(() => {
+		s.panoramaAr = true;
+
+		if (!panorama.hasCompass()) {
+			s.panoramaError = "No access to the compass: drag the view to line it up with the camera.";
+		}
+	}).catch((error) => {
+		s.panoramaError = error.message;
+	});
+};
+
+const openSite = (ids) => {
+	const first = data.byId.get(ids[0]);
+	closePanorama();
+	select(ids);
+
+	if (first) {
+		map.flyTo({ center: [first.lon, first.lat], zoom: Math.max(map.getZoom(), 14), padding: mapPadding(true), speed: 1.6 });
+	}
+};
+
+const panoramaOverlay = () => {
+	return when(() => s.panoramaOpen, () => {
+		const slot = el("div", { class: "min-h-0 flex-1" });
+
+		if (!panorama) {
+			panorama = createPanorama({
+				kinds: KINDS,
+				onSite: openSite,
+				onSites: (sites) => {
+					s.panoramaSites = sites.length;
+				}
+			});
+			panorama.setRows(visibleRows());
+		}
+
+		panorama.setRadius(untracked(() => s.panoramaRadius) * 1000);
+		panorama.setObserver(panoramaAt);
+		slot.appendChild(panorama.element);
+
+		return el("div", { class: "panel fixed inset-0 z-40 flex flex-col gap-3 p-3 md:inset-6 md:rounded-2xl md:p-4" },
+			el("div", { class: "flex flex-wrap items-center gap-2" },
+				el("h2", { class: "mr-1 text-base font-semibold tracking-tight" }, el("span", { class: "glow-text" }, "RF"), " panorama"),
+				el("span", { class: "min-w-0 truncate text-xs text-muted-foreground" }, () => {
+					const where = panoramaAt ? (panoramaAt.label ? "from " + panoramaAt.label : panoramaAt.lat.toFixed(4) + ", " + panoramaAt.lon.toFixed(4)) : "";
+					return where + " · " + formatNumber(s.panoramaSites) + " sites within " + s.panoramaRadius + " km";
+				}),
+				el("div", { class: "ml-auto flex flex-wrap items-center gap-1" },
+					...PANORAMA_RADII.map((km) => {
+						return Button({
+							variant: "secondary",
+							size: "sm",
+							class: () => "h-7 rounded-full px-2.5 text-xs" + (s.panoramaRadius === km ? " bg-primary text-primary-foreground hover:bg-primary/90" : ""),
+							onclick: () => {
+								s.panoramaRadius = km;
+								panorama.setRadius(km * 1000);
+								replaceUrl();
+							}
+						}, km + " km");
+					}),
+					Button({ variant: "outline", size: "sm", class: "h-7 rounded-full px-3 text-xs", onclick: openAroundMe }, "My location"),
+					Button({
+						variant: "outline",
+						size: "sm",
+						class: () => "h-7 rounded-full px-3 text-xs" + (s.panoramaAr ? " border-primary text-primary" : ""),
+						onclick: toggleAr
+					}, () => s.panoramaAr ? "Stop camera" : "AR camera"),
+					Button({ variant: "ghost", size: "icon", class: "size-8", onclick: closePanorama, "aria-label": "Close" }, XIcon({ class: "size-4" })))),
+			when(() => s.panoramaError !== "", () => {
+				return el("div", { class: "rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200" }, () => s.panoramaError);
+			}),
+			slot,
+			el("div", { class: "flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground" },
+				...Object.keys(KINDS).map((kind) => {
+					return legendDot(KINDS[kind].color, KINDS[kind].label);
+				}),
+				el("span", { class: "basis-full md:basis-auto md:ml-auto" }, () => s.panoramaAr ?
+					"Hold the phone upright and turn around; sites are drawn at their compass bearing. Tap one to open it." :
+					"Bearing left to right, nearer sites higher. Drag to look around, scroll to widen or narrow the view, click a site to list it. Follows the map filters.")));
+	});
+};
+
 // --- UI: legend + loading ---------------------------------------------------
 
 const legend = () => {
@@ -1829,7 +2002,7 @@ const loadingView = () => {
 
 const app = () => {
 	return when(() => s.loading, loadingView, () => {
-		return el("div", { class: "contents" }, mobileBar(), filterPanel(), detailPanel(), legend(), explorerOverlay());
+		return el("div", { class: "contents" }, mobileBar(), filterPanel(), detailPanel(), legend(), explorerOverlay(), panoramaOverlay());
 	});
 };
 
@@ -1872,8 +2045,10 @@ window.addEventListener("popstate", () => {
 });
 
 document.addEventListener("keydown", (event) => {
-	// Escape closes the topmost thing: explorer, then details, then filters
-	if (event.key === "Escape" && s.explorerOpen) {
+	// Escape closes the topmost thing: panorama / explorer, then details, then filters
+	if (event.key === "Escape" && s.panoramaOpen) {
+		closePanorama();
+	} else if (event.key === "Escape" && s.explorerOpen) {
 		closeExplorer();
 	} else if (event.key === "Escape" && s.selection.length > 0) {
 		closeSelection();

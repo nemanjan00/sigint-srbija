@@ -50,6 +50,10 @@ Default port 3000 is taken on the dev machine; use `PORT=3300`.
 - Responsive: below 768 px the filter panel and details are bottom sheets under a top bar (search + Filters button); bigger tap radius on touch devices. Check both a desktop and a phone viewport (390×844, touch) when changing layout.
 - `window.sigintMap` exposes the map for debugging; verify UI changes in a real browser (headless Chromium + puppeteer-core works with `--use-angle=swiftshader`).
 
+## RF panorama (`src/web/public/panorama.js`)
+
+Sites (map rows within the radius, grouped by position, filters apply) around an observer: 360° horizon strip (canvas; x = bearing, y = nearness, drag = turn, wheel = field of view; phones start at 120°) + north-up radar (sqrt distance). Opened by "Panorama from here" (detail), map right-click, "Around me" (geolocation; then not put in the URL), URL `?pano=lat,lon,km`. AR: rear camera (`getUserMedia`) under the strip, heading from `deviceorientationabsolute` (alpha) or iOS `webkitCompassHeading`, tilt from beta, GPS via `watchPosition` when the observer is the user. iOS needs `DeviceOrientationEvent.requestPermission()` from a tap; without sensor access AR still runs and the view is dragged. Needs HTTPS. Test in headless Chromium with `--use-fake-device-for-media-stream`, `page.setGeolocation` and a dispatched `DeviceOrientationEvent`.
+
 ## MCP (`src/mcp`, POST /mcp)
 
 Public, read-only, stateless Streamable HTTP MCP server on the web app (official `@modelcontextprotocol/sdk`, zod schemas); one server + transport per request. Tools: `search_emitters`, `find_frequency`, `get_emitter`, `band_plan`, `database_info`; all results carry the map `url`. Search runs in memory over every emitter (`src/search`, cached per `sources.fetched_at`, folded text). User-facing docs with client setup commands: `docs/mcp.md`. Test with the SDK client (`StreamableHTTPClientTransport`), not by editing the user's MCP config.

@@ -85,6 +85,11 @@ PORT=3300 yarn web      # map on http://localhost:3300
   details, click a signal to open it on the map. It opens on the clicked
   emitter's band, full screen with **Spectrum** / **Expand**, and the view is part
   of the link (`?spectrum=144,146`).
+- **RF panorama**: every transmitter site around a point as a 360° horizon
+  (bearing left to right, nearer sites higher) and a radar, within 5–80 km.
+  Open it from an emitter (**Panorama from here**), by right-clicking the map,
+  or with **Around me** (your location). On a phone, **AR camera** draws the sites
+  over the camera view, steered by the compass and following GPS.
 - Works on phones: filters and details become bottom sheets.
 
 API used by the page:
