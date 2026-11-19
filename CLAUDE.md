@@ -1,13 +1,44 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # sigint-srbija
 
-Collects public signal sources in Serbia (repeaters, beacons, licences, ...) into one place.
+Collects public signal sources in Serbia (repeaters, beacons, licences, ...) into one SQLite database and shows them on a map. README.md has the user-facing overview.
 
-- Always use the /implement-js skill when writing JS here.
-- `yarn fetch` fetches all sources into the global DB and resolves coordinates; `yarn fetch <id> ...` only the given ones.
+- Always use the /implement-js skill when writing JS here (CommonJS on the server, ES modules only in `src/web/public/`).
+
+## Commands
+
+- `yarn fetch [source-id ...]` — fetch sources into `data/sigint.sqlite`, then merge duplicates and resolve coordinates (`src/geo`). ~25 s for all; reg203 downloads ~100 MB.
+- `yarn reg203-enrich [--limit-pages N]` — HTML-only licence fields from ~8k RATEL pages (~15 min). Use `--limit-pages 3` to test.
+- `yarn gazetteer [--retry-missing]` — geocode unresolved site names (Nominatim, 1 req/s).
+- `yarn ratel-docs [--tree] [slug ...]` — RATEL document mirror into `lib/`.
+- `PORT=3300 yarn web` (forever) / `yarn watch` (nodemon) — map server.
+- `yarn lint` — ESLint (eslint 8, `.eslintrc.json`; `src/web/public` linted as browser ES modules). `npx eslint --fix <file>` fixes indentation.
+- No test suite. Verify data changes with sqlite3 queries against `data/sigint.sqlite`, UI changes in headless Chromium (see Web UI).
+- `SIGINT_DB=/path/to.sqlite` points every command at another database (e.g. a scratch rebuild).
+- The DB is fully rebuildable with `yarn fetch && yarn reg203-enrich` (current data only — sources are live, past states are not reproducible).
+
+## Deployment
+
+- `.github/workflows/image.yml` (same shape as ~/meat-proxy) builds `ghcr.io/nemanjan00/sigint-srbija` (`latest` + short sha, amd64/arm64) on every push to main/master; `ci.yml` lints.
+- Runs on `root@dmr.nemanja.top` (Docker Swarm, Traefik on the external `flocksocial` network, like the other stacks there). Stack file: `/root/sigint-srbija/docker-stack.yml`; host `sigint.nemanja.top`.
+- The database is not in the image. It is copied to the server and mounted: `/data/sigint/sigint.sqlite` → container `SIGINT_DB=/data/sigint/sigint.sqlite` (directory mount, SQLite needs to write WAL files next to it). One replica (SQLite).
+- Update the data: `sqlite3 data/sigint.sqlite ".backup /tmp/s.sqlite"`, copy it over the server file, then `docker service update --force sigint-srbija_web`.
+- Update the app: push to main, wait for the Image workflow, then `docker service update --image ghcr.io/nemanjan00/sigint-srbija:latest --with-registry-auth sigint-srbija_web` (or re-run `docker stack deploy`).
+
+## Gotchas found the hard way
+
+- `queue-promised` (0.0.31, the user's library) never lets the process exit once its queue drains (`runWaiter` re-arms forever). Bins that use `wrapper()` end with an explicit `process.exit(0)` (marked TODO).
+- got 11's built-in `retry` can crash the process with an uncatchable p-cancelable error; use `src/utils/retry` instead.
+- registar.ratel.rs omits its TLS intermediate; `src/services/ratel-registry` fetches it from Sectigo and adds it to the CA list. Never disable verification.
+- reg203 search pages are 1-based (`page=0` aliases page 1); the highest linked page is the last.
+- Express 5 passes listen errors to the `listen` callback instead of throwing.
 
 ## Web UI (map)
 
-`yarn web` (forever) / `yarn watch` (nodemon) → http://localhost:3000 (`PORT` env to change; 3000 is taken on this machine, use e.g. `PORT=3300`).
+Default port 3000 is taken on the dev machine; use `PORT=3300`.
 
 - `src/index.js` → `src/web` (express): `GET /api/map` = all emitters with coordinates as compact arrays (cached until `sources.fetched_at` changes), `GET /api/emitters/:id` = full row + reg203 detail and the licence's other assignments.
 - `src/web/public/` — static page, no build: MapLibre GL **5.x** UMD (6.x is ESM-only), CARTO dark-matter basemap (label fonts must be ones it serves, e.g. "Montserrat SemiBold"), UI from **qrp-shadcdn** (the user's shadcn port on qrp, CDN `+esm` bundle; Tailwind browser build + its `tailwind-theme.js`). Import qrp core (`state`, `el`, `when`, …) from the same bundle URL — never a second qrp copy.

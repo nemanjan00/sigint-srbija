@@ -102,7 +102,12 @@ const getEmitterByKey = (source, key) => {
 	return getEmitter(row.id);
 };
 
+const ping = () => {
+	return storage.getDatabase().prepare("SELECT count(*) AS n FROM sources").get().n;
+};
+
 module.exports = {
+	ping: ping,
 	getMapData: getMapData,
 	getEmitter: getEmitter,
 	getEmitterByKey: getEmitterByKey

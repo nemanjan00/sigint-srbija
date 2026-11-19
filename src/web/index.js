@@ -9,6 +9,12 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const app = express();
 
 app.use(compression());
+
+// Container healthcheck: the database opens and answers
+app.get("/healthz", (_req, res) => {
+	emitters.ping();
+	res.json({ ok: true });
+});
 app.use(express.static(PUBLIC_DIR));
 
 // Every emitter with coordinates, compact (see emitters.getMapData)
