@@ -8,6 +8,8 @@ const DatabaseSync = require("node:sqlite").DatabaseSync;
 
 const DATA_DIR = path.join(__dirname, "..", "..", "data");
 const DB_FILE = process.env.SIGINT_DB || path.join(DATA_DIR, "sigint.sqlite");
+// generated files that belong with the database (e.g. raw downloads) live next to it
+const DB_DIR = path.dirname(DB_FILE);
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS sources (
@@ -177,6 +179,7 @@ const close = () => {
 
 module.exports = {
 	DATA_DIR: DATA_DIR,
+	DB_DIR: DB_DIR,
 	DB_FILE: DB_FILE,
 	getDatabase: getDatabase,
 	transaction: transaction,

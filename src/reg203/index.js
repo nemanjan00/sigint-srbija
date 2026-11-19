@@ -61,7 +61,8 @@ const build = (database, csvFile) => {
 		const form = parser.parseFormPage(html);
 
 		console.log("indexing " + parsed.rows.length + " rows into SQLite");
-		database.replaceAssignments(parsed.rows.map(parser.toAssignment), form);
+		const replaced = database.replaceAssignments(parsed.rows.map(parser.toAssignment), form);
+		console.log("  kept enrichment of " + replaced.kept + " unchanged assignments");
 		database.setMeta({
 			source_url: SOURCE_URL,
 			csv_file: path.resolve(csvFile),

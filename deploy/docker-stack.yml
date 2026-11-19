@@ -40,6 +40,25 @@ services:
       restart_policy:
         condition: on-failure
 
+  # Nightly database update (bin/cron.js): fetch all sources, then enrich reg203
+  updater:
+    image: ghcr.io/nemanjan00/sigint-srbija:latest
+    command: ["node", "bin/cron.js"]
+    environment:
+      - SIGINT_DB=/data/sigint/sigint.sqlite
+      - UPDATE_SCHEDULE=0 4 * * *
+      - UPDATE_TIMEZONE=Europe/Belgrade
+    volumes:
+      - /data/sigint:/data/sigint
+    healthcheck:
+      disable: true
+    networks:
+      - default
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
 networks:
   default:
     external: true

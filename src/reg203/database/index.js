@@ -110,6 +110,10 @@ WHERE redni_broj = :redni_broj AND broj_dozvole = :broj_dozvole
 	AND IFNULL(lokacija, '') = IFNULL(:lokacija, '') AND IFNULL(vazi_od, '') = IFNULL(:vazi_od, '')
 	AND IFNULL(rok_trajanja, '') = IFNULL(:rok_trajanja, '')`;
 
+// Identity of an assignment across exports, and the fields only enrichment fills
+const ENRICHMENT_KEY = ["redni_broj", "broj_dozvole", "tx_freq_raw", "rx_freq_raw", "lokacija", "vazi_od", "rok_trajanja", "lon_raw", "lat_raw"];
+const ENRICHMENT_COLUMNS = ["nosilac_naziv", "nosilac_adresa", "tehnicki_pregled", "datum_pocetka", "vrsta_opis", "enriched"];
+
 const ENRICH_PARAMS = [
 	"nosilac_naziv", "nosilac_adresa", "tehnicki_pregled", "datum_pocetka", "vrsta_opis",
 	"redni_broj", "broj_dozvole", "tx_freq_low_hz", "rx_freq_low_hz", "lokacija", "vazi_od", "rok_trajanja"
@@ -239,6 +243,10 @@ const open = () => {
 		 */
 		replaceAssignments: (assignments, lookups) => {
 			database.begin();
+			// keep HTML-only fields of assignments that did not change, so a
+			// re-fetch does not undo the (slow) enrichment until it runs again
+			db.exec(`CREATE TEMP TABLE reg203_kept AS SELECT ${ENRICHMENT_KEY.join(", ")}, ${ENRICHMENT_COLUMNS.join(", ")}
+				FROM reg203_assignments WHERE enriched = 1`);
 			db.exec("DELETE FROM reg203_assignments");
 			db.exec("INSERT INTO reg203_fts(reg203_fts) VALUES('rebuild')");
 			assignments.forEach((assignment) => {
@@ -252,8 +260,17 @@ const open = () => {
 					insert.run(code, table[1][code]);
 				});
 			});
+			const kept = db.prepare(`UPDATE reg203_assignments AS a SET ${ENRICHMENT_COLUMNS.map((column) => {
+				return column + " = k." + column;
+			}).join(", ")}
+				FROM reg203_kept AS k WHERE ${ENRICHMENT_KEY.map((column) => {
+		return "a." + column + " IS k." + column;
+	}).join(" AND ")}`).run().changes;
+			db.exec("DROP TABLE reg203_kept");
 			db.exec("INSERT INTO reg203_fts(reg203_fts) VALUES('rebuild')");
 			database.commit();
+
+			return { kept: kept };
 		},
 
 		// Apply fields parsed from an HTML row; returns true when a row matched

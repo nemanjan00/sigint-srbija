@@ -10,6 +10,7 @@
     "express": "^5.3.0",
     "forever": "^4.0.3",
     "got-verbose": "^0.0.19",
+    "node-cron": "^4.6.0",
     "queue-promised": "^0.0.31"
   },
   "devDependencies": {
@@ -29,7 +30,9 @@
     "reg203-enrich": "node bin/reg203-enrich.js",
     "reg203-enrich-watch": "nodemon bin/reg203-enrich.js",
     "gazetteer": "node bin/gazetteer.js",
-    "gazetteer-watch": "nodemon bin/gazetteer.js"
+    "gazetteer-watch": "nodemon bin/gazetteer.js",
+    "cron": "forever bin/cron.js",
+    "cron-watch": "nodemon bin/cron.js"
   },
   "description": "Public signal sources in Serbia, collected in one place",
   "nodemonConfig": {
