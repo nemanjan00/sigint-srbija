@@ -1440,7 +1440,45 @@ const cellBlock = (detail) => {
 							el("td", { class: "px-2 py-1 font-mono" }, band + " MHz"),
 							el("td", { class: "px-2 py-1" }, byBand[band].join(", ")));
 					})))),
-		el("span", { class: "text-[11px] text-muted-foreground" }, "Register ids " + raw.ids.join(", ")));
+		el("span", { class: "text-[11px] text-muted-foreground" }, "Register ids " + raw.ids.join(", ")),
+		observedBlock(raw));
+};
+
+// Cells seen at the site in contributed observations; carriers on a band the
+// site has no registered station for are marked
+const observedBlock = (raw) => {
+	if (!raw.observed || raw.observed.length === 0) {
+		return null;
+	}
+
+	const carrier = (entry) => {
+		const registered = raw.bands.includes(entry.register_band);
+		return el("span", {
+			class: "whitespace-nowrap" + (registered ? "" : " text-amber-400"),
+			title: "channel " + entry.channel + ", band " + entry.band + (registered ? "" : " — no registered station on this band")
+		}, entry.mhz + (registered ? "" : "*"));
+	};
+
+	return el("div", { class: "grid gap-1.5 pt-2" },
+		SubHeading("Observed cells (" + raw.observed.length + ")"),
+		el("div", { class: "overflow-hidden rounded-lg border border-white/5" },
+			el("table", { class: "w-full text-xs" },
+				el("thead", { class: "bg-white/5 text-muted-foreground" },
+					el("tr", {},
+						el("th", { class: "px-2 py-1.5 text-left font-medium" }, "Tech"),
+						el("th", { class: "px-2 py-1.5 text-left font-medium" }, "Cell"),
+						el("th", { class: "px-2 py-1.5 text-left font-medium" }, "Downlink MHz"),
+						el("th", { class: "px-2 py-1.5 text-right font-medium" }, "Off"))),
+				el("tbody", {},
+					...raw.observed.map((cell) => {
+						return el("tr", { class: "border-t border-white/5 align-top" },
+							el("td", { class: "px-2 py-1" }, cell.technology),
+							el("td", { class: "px-2 py-1 font-mono" }, cell.cell_id),
+							el("td", { class: "px-2 py-1 font-mono" },
+								cell.carriers.length ? el("div", { class: "flex flex-wrap gap-x-2" }, ...cell.carriers.map(carrier)) : el("span", { class: "text-muted-foreground" }, "—")),
+							el("td", { class: "px-2 py-1 text-right font-mono text-muted-foreground" }, cell.distance_m + " m"));
+					})))),
+		el("span", { class: "text-[11px] text-muted-foreground" }, "Contributed measurements, matched to this site by operator, technology and position (estimated, \"Off\" = distance). * = band without a registered station here."));
 };
 
 const linkBlock = (detail) => {

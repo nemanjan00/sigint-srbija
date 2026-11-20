@@ -7,10 +7,12 @@
 //   operator    network operator
 //   tx_hz..     downlink of the lowest band (the coverage layer); all bands in raw.bands
 //   location    address, city = place from the address' postcode row
+//   raw.observed  cells seen at the site in contributed observations (src/cell-observations)
 const ratelRegistry = require("../../services/ratel-registry");
 const ratel = require("../../utils/ratel");
 const sector = require("../../reg203/sector");
 const toWgs84 = require("../../reg203/database").toWgs84;
+const cellObservations = require("../../cell-observations");
 
 const REGISTER = "reg221";
 // Downlink (base station transmit) ranges of the bands named in the register, MHz
@@ -98,9 +100,9 @@ const ratelReg221 = {
 				return result;
 			}, {});
 
-			return Object.keys(groups).map((key) => {
+			return cellObservations.enrich(Object.keys(groups).map((key) => {
 				return toEmitter(key, groups[key]);
-			});
+			}));
 		});
 	}
 };
