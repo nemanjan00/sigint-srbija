@@ -8,3 +8,4 @@ data/*.sqlite*
 
 # built map page (yarn build)
 src/web/dist/
+data/donation.json

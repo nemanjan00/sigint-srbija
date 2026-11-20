@@ -5,3 +5,4 @@ lib
 data/*.sqlite*
 data/reg203
 src/web/dist
+data/donation.json
