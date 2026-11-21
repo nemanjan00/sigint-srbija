@@ -102,6 +102,7 @@ API used by the page:
 |---|---|
 | `GET /api/map` | every emitter with a position, as compact rows |
 | `GET /api/emitters/:id` | one emitter, its other listings, repeater access (`access`: CTCSS tone, DMR colour code and talkgroups), and for licences the full register row and the licence's other assignments |
+| `GET /api/live` | server-sent events: BrandMeister activity of Serbian DMR repeaters (`snapshot`, then `station` per change); details also play talkgroups live from BrandMeister Hoseline |
 | `GET /api/emitter?source=&key=` | the same, by stable key |
 | `POST /mcp` | MCP server (see above) |
 
@@ -153,7 +154,8 @@ bin/                entry points (fetch, reg203-enrich, gazetteer, ratel-docs)
 src/sources/        one module per source -> emitters
 src/storage/        the SQLite database
 src/geo/            duplicate merging + position resolution
-src/access/          repeater access: CTCSS tone, DMR colour code / talkgroups from the source records
+src/access/         repeater access: CTCSS tone, DMR colour code / talkgroups from the source records
+src/live/           BrandMeister last heard for Serbian DMR repeaters (memory only)
 src/bandplan/       national band plan: PDF parser, English names, listening hints
 src/reg203/         RATEL register: parser, detail tables, sector guessing
 src/ratel-docs/     RATEL document mirror

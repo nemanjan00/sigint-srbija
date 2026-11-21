@@ -4,6 +4,7 @@ const sector = require("../../reg203/sector");
 const spectrum = require("../spectrum");
 const ratelRegistry = require("../../services/ratel-registry");
 const access = require("../../access");
+const live = require("../../live");
 
 // Columns sent to the browser for every point, in this order
 const MAP_COLUMNS = ["id", "lat", "lon", "source", "kind", "mode", "tx_hz", "tx_high_hz", "active", "callsign", "operator", "location", "station_type", "service_type", "sector", "owner", "coord_accuracy_m", "duplicate_of"];
@@ -139,6 +140,8 @@ const getEmitter = (id) => {
 	}
 
 	result.links = linkedStations(db, emitter, result.raw);
+	// BrandMeister activity of the station (DMR repeaters), memory only
+	result.live = live.get(canonical);
 	result.spectrum = spectrum.getSpectrum(result);
 
 	return result;

@@ -220,7 +220,7 @@ const createServer = (baseUrl) => {
 
 	server.registerTool("get_emitter", {
 		title: "Emitter details",
-		description: "Full record of one emitter: every field, the source record, repeater access (`access`: CTCSS tone `ctcss_hz` / `ctcss_out_hz`, DMR `color_code`, `ts1_tg` / `ts2_tg`, merged from the station's listings), other sources' listings of the same station, and for licences the full register entry and all assignments on the licence. Pass `url` from a result, or `source` + `key`.",
+		description: "Full record of one emitter: every field, the source record, repeater access (`access`: CTCSS tone `ctcss_hz` / `ctcss_out_hz`, DMR `color_code`, `ts1_tg` / `ts2_tg`, merged from the station's listings), `live` (DMR repeaters: last call and talkgroups heard recently on BrandMeister, from the server's memory; null when none), other sources' listings of the same station, and for licences the full register entry and all assignments on the licence. Pass `url` from a result, or `source` + `key`.",
 		inputSchema: {
 			url: z.string().optional().describe("A map URL, e.g. https://sigint.nemanja.top/e/brandmeister/220001"),
 			source: z.enum(SOURCES).optional(),

@@ -94,6 +94,12 @@ RATEL "Plan namene RF opsega — Tabela 1" (PDF, Dec 2025), parsed from `pdftote
 
 CTCSS (PL) tone and DMR colour code / timeslot talkgroups parsed from the amateur sources' `raw` (SRS table `cc`/`ts1`/`ts2` — `cc` is the tone for VHF/UHF/RUM and the colour code for DMR; SRS map `PL` incl. split tone "RX-123, TX-88.5" and `TS1`/`TS2` "TG220"; BrandMeister `colorcode`). Fields: `ctcss_hz` (tone to open the repeater), `ctcss_out_hz` (only when a different output tone is published), `color_code`, `ts1_tg`, `ts2_tg`; implausible values ("nema rep") are dropped. A station's `access` = its own listing's fields, missing ones from its other listings (`access.merge` in rank order). `GET /api/emitters/:id` → `access` + per-listing `listings[].access` (details flag differing tones); MCP search results and `get_emitter` carry `access` (`src/search` computes it on load).
 
+## BrandMeister live (`src/live`, `src/web/client/hose.js`)
+
+- On-air state: the web process follows the BrandMeister last-heard feed (`src/services/brandmeister-lastheard`, Socket.IO v4 spoken over `ws`, reconnects with backoff; `SIGINT_LIVE=0` turns it off). Only sessions on master 2302 whose ContextID is a listed repeater's DMR ID count (hotspots are never tracked). Memory only: per main listing the running call, the last call and talkgroups heard in the last 24 h. `GET /api/live` = SSE (`snapshot`, then `station` {id, state}), registered **before** `compression()` (it buffers streams); `getEmitter().live`; MCP `get_emitter.live`.
+- Feed facts (observed 2026-11): master 2302 only publishes `Session-Stop` (no Start/Update), so calls show when they end. The map pulses a ring (`onair-ring`) for 30 s after a call (`JUST_HEARD_MS`) or while a call runs. On connect the feed replays the last ~20 min of sessions, so times come from the session's Start/Stop, never arrival, and older sessions don't replace newer ones. Master 2302 also carries Czech (OK, 230xxx) traffic. Serbian traffic is sparse; test UI with a fake feed (replace `lastheard.follow` before `live.start()`).
+- Listen: `hose.js` connects the browser straight to Hoseline (`wss://hose.brandmeister.network/spotter/?token=test:test`, the public token BrandMeister's own page uses; works from our origin), MessagePack `[type, ...args]` (1 join [tgs], 11 call start, 21 alias, 20 µ-law 8 kHz audio 960 B/120 ms, 22 level dB, 12/13 drop/end), played with Web Audio. One talkgroup at a time, floating player bar. Details offer the published TS1/TS2 talkgroups plus the ones heard; "Hoseline ↗" = `https://hose.brandmeister.network/?subscribe=<tg,...>`.
+
 ## Licence holder sector
 
 `emitters.sector` / `emitters.owner` (public | private | amateur). For reg203 they are guessed from the holder name by ordered regex rules in `src/reg203/sector` (folded to lowercase Latin via `src/utils/text`). Police and military are not in the public register; there is no modulation / emission class field anywhere in reg203. Check the distribution after editing rules (top holders per sector).
@@ -102,7 +108,7 @@ CTCSS (PL) tone and DMR colour code / timeslot talkgroups parsed from the amateu
 
 - `src/sources/<id>/index.js` — `{ id, description, url, fetch() }`, `fetch()` resolves to emitters (objects with the `emitters` column names; `source_key` required, `raw` any JSON). Registered in `src/sources/index.js`.
 - `src/web` — map UI + API (see above).
-- `src/services/` — HTTP clients (`ratel-registry`, `ratel-website`, `brandmeister`, `nominatim`).
+- `src/services/` — HTTP clients (`ratel-registry`, `ratel-website`, `brandmeister`, `nominatim`) and the `brandmeister-lastheard` WebSocket feed.
 - `src/reg203` (+ `parser`, `database`) — RATEL licence register; `yarn reg203-enrich` adds HTML-only fields (slow, ~8k pages).
 - `src/ratel-docs` + `bin/ratel-docs.js` — RATEL document mirror → `lib/` (gitignored). Not emitters.
 - `src/utils/` — `table` (HTML table parser), `frequency` (MHz → Hz), `maidenhead`, `datum`, `ratel` (RATEL value parsers), `retry` (don't use got's own retry, it can crash got 11).

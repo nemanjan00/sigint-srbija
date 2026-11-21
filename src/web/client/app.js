@@ -9,6 +9,7 @@ import {
 import maplibregl from "maplibre-gl";
 import { createSpectrum, formatHz, CATEGORY_LEGEND } from "./spectrum.js";
 import { createPanorama } from "./panorama.js";
+import { createHosePlayer, hoselineUrl } from "./hose.js";
 
 const BASEMAP = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 const INITIAL_BOUNDS = [[18.8, 41.85], [23.0, 46.2]];
@@ -24,6 +25,11 @@ const APPROXIMATE_M = 1000;
 const LIST_CLUSTER_ZOOM = 12;
 const LIST_CLUSTER_SIZE = 6;
 const MAX_LIST = 500;
+// on-air rings pulse at this rate
+const PULSE_MS = 80;
+const PULSE_PERIOD_MS = 1600;
+// BrandMeister Serbia only reports calls when they end: pulse this long after
+const JUST_HEARD_MS = 30 * 1000;
 
 const KINDS = {
 	repeater: { label: "Repeaters", color: "#22d3ee" },
@@ -156,7 +162,13 @@ const s = state({
 	panoramaAr: false,
 	panoramaError: "",
 	panoramaSites: 0,
-	arFiltersOpen: false
+	arFiltersOpen: false,
+	// BrandMeister activity per main listing id (GET /api/live)
+	live: {},
+	// Hoseline player: { talkgroup, status, caller, level } or null
+	player: null,
+	// ticks every second while a call is on air (call timers)
+	clock: Date.now()
 });
 
 const frequencyRange = () => {
@@ -346,6 +358,7 @@ const addLayers = () => {
 	map.addSource("selected", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
 	map.addSource("accuracy", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
 	map.addSource("links", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+	map.addSource("onair", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
 
 	map.addLayer({
 		id: "accuracy-fill",
@@ -457,6 +470,20 @@ const addLayers = () => {
 		paint: { "text-color": kindColor, "text-halo-color": "#05080f", "text-halo-width": 1.4 }
 	});
 
+	// DMR repeaters with a call in progress (BrandMeister), pulsing; see pulseOnAir
+	map.addLayer({
+		id: "onair-ring",
+		type: "circle",
+		source: "onair",
+		paint: {
+			"circle-radius": 10,
+			"circle-color": "transparent",
+			"circle-stroke-color": "#4ade80",
+			"circle-stroke-width": 2.5,
+			"circle-stroke-opacity": 0.9
+		}
+	});
+
 	map.addLayer({
 		id: "selected-ring",
 		type: "circle",
@@ -528,6 +555,87 @@ const setLinks = (visibleIds) => {
 	map.getSource("links").setData({ type: "FeatureCollection", features: features });
 };
 
+// --- live: BrandMeister on-air state and Hoseline ---------------------------
+
+let pulseTimer = null;
+
+// A call in progress, or one that ended moments ago
+const isActive = (station, now) => {
+	return Boolean(station && (station.call || (station.last && now - station.last.stop < JUST_HEARD_MS)));
+};
+
+const onAirIds = () => {
+	const now = Date.now();
+
+	return Object.keys(s.live).map(Number).filter((id) => {
+		return isActive(s.live[id], now) && data.byId.has(id) && (!data.visibleIds || data.visibleIds.has(id));
+	});
+};
+
+// Grow and fade the rings while anything is on air
+const pulseOnAir = (active) => {
+	if (!active) {
+		clearInterval(pulseTimer);
+		pulseTimer = null;
+		return;
+	}
+
+	if (pulseTimer) {
+		return;
+	}
+
+	pulseTimer = setInterval(() => {
+		const now = Date.now();
+		const phase = (now % PULSE_PERIOD_MS) / PULSE_PERIOD_MS;
+		map.setPaintProperty("onair-ring", "circle-radius", 8 + phase * 14);
+		map.setPaintProperty("onair-ring", "circle-stroke-opacity", 1 - phase);
+
+		// once a second: call timers, and drop rings whose "just heard" ran out
+		if (Math.floor(now / 1000) !== Math.floor(s.clock / 1000)) {
+			s.clock = now;
+			setOnAir();
+		}
+	}, PULSE_MS);
+};
+
+const setOnAir = () => {
+	if (!map.getSource("onair")) {
+		return;
+	}
+
+	const features = onAirIds().map((id) => {
+		const row = data.byId.get(id);
+		return { type: "Feature", geometry: { type: "Point", coordinates: [row.lon, row.lat] }, properties: { id: id } };
+	});
+
+	map.getSource("onair").setData({ type: "FeatureCollection", features: features });
+	pulseOnAir(features.length > 0);
+};
+
+const followLive = () => {
+	const events = new EventSource("/api/live");
+
+	events.addEventListener("snapshot", (event) => {
+		s.live = Object.freeze(JSON.parse(event.data));
+	});
+	events.addEventListener("station", (event) => {
+		const change = JSON.parse(event.data);
+		const live = Object.assign({}, s.live);
+
+		if (change.state) {
+			live[change.id] = change.state;
+		} else {
+			delete live[change.id];
+		}
+
+		s.live = Object.freeze(live);
+	});
+};
+
+const player = createHosePlayer((state) => {
+	s.player = state;
+});
+
 const applyFilter = (filter) => {
 	const features = data.features.filter((_, index) => {
 		return matches(filter, data.rows[index], index);
@@ -540,9 +648,11 @@ const applyFilter = (filter) => {
 	data.visible = features.map((feature) => {
 		return withFrequency(data.byId.get(feature.properties.id));
 	});
-	setLinks(new Set(features.map((feature) => {
+	data.visibleIds = new Set(features.map((feature) => {
 		return feature.properties.id;
-	})));
+	}));
+	setLinks(data.visibleIds);
+	setOnAir();
 	[panelExplorer, fullExplorer].filter(Boolean).forEach((explorer) => {
 		explorer.setSignals(data.visible);
 	});
@@ -1717,6 +1827,101 @@ const linksBlock = (detail) => {
 		el("span", { class: "text-[11px] text-muted-foreground" }, "Links as drawn on the SRS repeater map."));
 };
 
+const formatAgo = (time, now) => {
+	const seconds = Math.max(0, Math.round((now - time) / 1000));
+
+	if (seconds < 60) {
+		return seconds + " s ago";
+	}
+
+	if (seconds < 3600) {
+		return Math.round(seconds / 60) + " min ago";
+	}
+
+	return Math.round(seconds / 3600) + " h ago";
+};
+
+const formatDuration = (ms) => {
+	const seconds = Math.max(0, Math.round(ms / 1000));
+	return Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
+};
+
+const callText = (call) => {
+	const target = call.private ? "private call" : "TG " + call.talkgroup;
+	return [call.callsign || "?", "→ " + target, call.slot ? "TS" + call.slot : null].filter(Boolean).join(" ");
+};
+
+// Talkgroups to offer for listening: the published timeslot talkgroups, then the ones heard here
+const talkgroupsOf = (detail, station) => {
+	const published = [detail.access && detail.access.ts1_tg, detail.access && detail.access.ts2_tg];
+	const heard = station ? Object.keys(station.talkgroups).map(Number) : [];
+
+	return published.concat(heard).filter((talkgroup, index, all) => {
+		return talkgroup && all.indexOf(talkgroup) === index;
+	});
+};
+
+const listenButton = (talkgroup) => {
+	return el("button", {
+		class: () => {
+			const playing = s.player && s.player.talkgroup === talkgroup;
+			return "rounded-full border px-2.5 py-1 font-mono text-xs " + (playing ? "border-emerald-400/60 bg-emerald-400/15 text-emerald-300" : "border-white/10 bg-black/20 text-foreground hover:border-white/25");
+		},
+		title: "Listen to TG " + talkgroup + " live (BrandMeister Hoseline)",
+		onclick: () => {
+			if (s.player && s.player.talkgroup === talkgroup) {
+				player.stop();
+			} else {
+				player.play(talkgroup);
+			}
+		}
+	}, () => {
+		return (s.player && s.player.talkgroup === talkgroup ? "■ " : "▶ ") + "TG " + talkgroup;
+	});
+};
+
+// DMR repeaters on BrandMeister: what's on air (last-heard feed) and live audio (Hoseline)
+const dmrBlock = (detail) => {
+	const id = detail.duplicate_of || detail.id;
+
+	if (detail.mode !== "DMR" || !(detail.dmr_id || detail.access || detail.live)) {
+		return null;
+	}
+
+	return el("div", { class: "grid gap-2" },
+		SubHeading("BrandMeister live"),
+		when(() => JSON.stringify(s.live[id] || null) + "|" + (isActive(s.live[id], s.clock) ? Math.floor(s.clock / 1000) : ""), () => {
+			const station = untracked(() => {
+				return s.live[id] || detail.live || null;
+			});
+			const now = untracked(() => {
+				return s.clock;
+			});
+			const talkgroups = talkgroupsOf(detail, station);
+
+			return el("div", { class: "grid gap-2" },
+				station && station.call ? el("div", { class: "flex items-center gap-2 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-sm" },
+					el("span", { class: "size-2 flex-none animate-pulse rounded-full bg-emerald-400" }),
+					el("span", { class: "flex-1 font-mono" }, callText(station.call)),
+					el("span", { class: "font-mono text-xs text-emerald-300" }, formatDuration(now - station.call.start))) : null,
+				station && station.last ? el("div", { class: "flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground" },
+					isActive({ last: station.last }, now) ? el("span", { class: "size-2 animate-pulse rounded-full bg-emerald-400" }) : null,
+					"Last heard ",
+					el("span", { class: "font-mono text-foreground" }, callText(station.last)),
+					el("span", {}, formatAgo(station.last.stop, now) + " · " + formatDuration(station.last.stop - station.last.start))) : null,
+				station && Object.keys(station.talkgroups).length > 0 ? el("div", { class: "text-xs text-muted-foreground" }, "Heard here recently: ",
+					el("span", { class: "font-mono text-foreground" }, Object.keys(station.talkgroups).map((talkgroup) => {
+						return "TG " + talkgroup;
+					}).join(", "))) : null,
+				!station ? el("div", { class: "text-xs text-muted-foreground" }, "No calls heard recently.") : null,
+				talkgroups.length > 0 ? el("div", { class: "flex flex-wrap items-center gap-1.5" },
+					el("span", { class: "mr-1 text-xs text-muted-foreground" }, "Listen"),
+					...talkgroups.map(listenButton),
+					el("a", { class: "ml-1 text-[11px] text-primary hover:underline", target: "_blank", rel: "noreferrer", href: hoselineUrl(talkgroups) }, "Hoseline ↗")) : null);
+		}),
+		el("span", { class: "text-[11px] text-muted-foreground" }, "BrandMeister reports calls on Serbian repeaters when they end. Talkgroup audio is network-wide (every repeater on that talkgroup), not just this one."));
+};
+
 const sectorLabel = (id) => {
 	const sector = data.lookups.sectors.find((candidate) => {
 		return candidate.id === id;
@@ -1764,6 +1969,7 @@ const detailView = (detail) => {
 						openPanorama({ lat: detail.lat, lon: detail.lon, label: titleOf(detail), mine: false });
 					} }, "Panorama from here"))) : null,
 			field("Position from", coordinateSourceLabel(detail) + (detail.coord_accuracy_m ? " · ±" + formatNumber(detail.coord_accuracy_m) + " m" : ""))),
+		dmrBlock(detail),
 		listingsBlock(detail),
 		linksBlock(detail),
 		spectrumBlock(detail),
@@ -2232,6 +2438,55 @@ const legend = () => {
 		el("span", {}, "Click a pin for details"));
 };
 
+// Floating Hoseline player while a talkgroup is playing
+const playerBar = () => {
+	return when(() => s.player !== null, () => {
+		return el("div", { class: "panel absolute left-1/2 top-28 z-20 flex max-w-[calc(100vw-32px)] -translate-x-1/2 items-center gap-3 whitespace-nowrap rounded-full py-1.5 pl-4 pr-1.5 text-sm md:top-4" },
+			el("span", { class: () => {
+				return "size-2 flex-none rounded-full " + playerDot(s.player);
+			} }),
+			el("span", { class: "font-mono" }, () => {
+				return s.player ? "TG " + s.player.talkgroup : "";
+			}),
+			el("span", { class: "min-w-0 truncate font-mono text-xs text-muted-foreground md:min-w-24" }, () => {
+				return playerStatus(s.player);
+			}),
+			Button({ variant: "ghost", size: "sm", class: "h-7 rounded-full px-3 text-xs", onclick: player.stop }, "Stop"));
+	});
+};
+
+const playerDot = (state) => {
+	if (state && (state.caller || state.callerId)) {
+		return "animate-pulse bg-emerald-400";
+	}
+
+	if (state && state.status === "error") {
+		return "bg-destructive";
+	}
+
+	return "bg-white/30";
+};
+
+const playerStatus = (state) => {
+	if (!state) {
+		return "";
+	}
+
+	if (state.status === "connecting") {
+		return "connecting…";
+	}
+
+	if (state.status === "error") {
+		return "disconnected";
+	}
+
+	if (state.caller || state.callerId) {
+		return (state.caller || state.callerId) + (state.level !== null && state.level !== undefined ? " · " + Math.round(state.level) + " dB" : "");
+	}
+
+	return "waiting for a call";
+};
+
 const loadingView = () => {
 	return el("div", { class: "absolute inset-0 grid place-items-center bg-background" },
 		el("div", { class: "grid place-items-center gap-4" },
@@ -2243,7 +2498,7 @@ const loadingView = () => {
 
 const app = () => {
 	return when(() => s.loading, loadingView, () => {
-		return el("div", { class: "contents" }, mobileBar(), filterPanel(), detailPanel(), legend(), explorerOverlay(), panoramaOverlay());
+		return el("div", { class: "contents" }, mobileBar(), filterPanel(), detailPanel(), legend(), playerBar(), explorerOverlay(), panoramaOverlay());
 	});
 };
 
@@ -2267,6 +2522,10 @@ Promise.all([loadData(), mapReady]).then(() => {
 
 	map.on("moveend", replaceUrl);
 	openRoute({ fly: !initialView });
+	onChange(() => {
+		return s.live;
+	}, setOnAir);
+	followLive();
 });
 
 matchMedia(MOBILE_QUERY).addEventListener("change", (event) => {
