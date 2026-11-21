@@ -57,9 +57,28 @@ const STATION_TYPES = {
 	NL: { hear: "Maritime navigation beacon", prefer: ["navigation"] },
 	SM: { hear: "Meteorological aids station", prefer: ["radiosonde"] }
 };
-const OWN_BANDWIDTH_KINDS = ["broadcast", "cell", "link", "mesh", "cb", "lorawan"];
+const OWN_BANDWIDTH_KINDS = ["broadcast", "cell", "link", "mesh", "cb", "lorawan", "aviation"];
 // Band plan hints shown for a licence (the full list of uses is shown anyway)
 const MAX_PLAN_HINTS = 2;
+
+// Aviation radio (OurAirports): navaids by type, everything else is airband AM voice
+const aviationHint = (emitter, raw) => {
+	const dme = raw.dme_reply_mhz ? "; its DME answers aircraft on " + raw.dme_reply_mhz + " MHz (channel " + raw.dme_channel + ")" : "";
+
+	if (emitter.mode === "NDB") {
+		return { hear: "Non-directional beacon: a continuous AM carrier with the Morse ident " + (emitter.callsign || "") + " repeated every few seconds — any LW/MW receiver in AM or CW", bandwidthHz: 2000, technology: "NDB" };
+	}
+
+	if (emitter.mode === "TACAN") {
+		return { hear: "TACAN (military VOR + DME equivalent): pulse pairs, nothing to listen to except the Morse ident" + dme, bandwidthHz: 1000000, technology: "TACAN" };
+	}
+
+	if (/VOR/.test(emitter.mode || "")) {
+		return { hear: "VOR navigation beacon: AM carrier with 30 Hz navigation tones and the Morse ident " + (emitter.callsign || "") + " (sometimes voice), receivable in AM" + dme, bandwidthHz: 25000, technology: "VOR" };
+	}
+
+	return { hear: "Air traffic radio (" + emitter.mode + "): AM voice between controllers and aircraft, 8.33 kHz channels; ATIS loops recorded weather and runway info", bandwidthHz: 8330, technology: "airband AM" };
+};
 
 // Hints from the emitter's own data (amateur sources say the mode, registers the kind).
 // bandwidthHz null = known to be unknown (the TX range is a band, not the signal)
@@ -80,6 +99,14 @@ const fromEmitter = (emitter) => {
 
 	if (emitter.kind === "mesh") {
 		return { hear: "Meshtastic LoRa mesh node: short chirp bursts (text, positions, telemetry) on 869.525 MHz — decode with any Meshtastic radio, or see them on jugomesh.com", bandwidthHz: 250000, technology: "LoRa" };
+	}
+
+	if (emitter.kind === "emf") {
+		return { hear: "Not a transmitter: a RATEL measuring station recording the total electric field of every source around it (100 kHz - 7 GHz) every 6 minutes", bandwidthHz: null, technology: "EMF sensor" };
+	}
+
+	if (emitter.kind === "aviation") {
+		return aviationHint(emitter, raw);
 	}
 
 	if (emitter.kind === "lorawan") {

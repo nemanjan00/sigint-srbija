@@ -18,8 +18,8 @@ const FREQ_TOLERANCE_HZ = 2000;
 // Sources disagree on frequencies of the same station (beacon YU0ZVA 144.41250
 // vs 144.44125, YU0ZUA 432.401 vs 432.2401), so a shared callsign + kind allows more slack
 const CALLSIGN_FREQ_TOLERANCE_HZ = 250000;
-// Register kinds (RATEL) and LoRaWAN gateways (no callsign, own positions) are never merged or positioned from other sources
-const REGISTER_KINDS = ["licence", "broadcast", "cell", "link", "cb", "lorawan"];
+// Register kinds (RATEL), LoRaWAN gateways and aviation radio (own positions) are never merged or positioned from other sources
+const REGISTER_KINDS = ["licence", "broadcast", "cell", "link", "cb", "lorawan", "aviation", "emf"];
 const NOT_REGISTER = "(kind IS NULL OR kind NOT IN (" + REGISTER_KINDS.map((kind) => {
 	return "'" + kind + "'";
 }).join(", ") + "))";

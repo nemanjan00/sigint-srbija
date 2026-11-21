@@ -12,7 +12,7 @@ const SERVER_NAME = "sigint-srbija";
 const SERVER_VERSION = require("../../package.json").version;
 const DEFAULT_TOLERANCE_KHZ = 12.5;
 
-const INSTRUCTIONS = `Public radio signal sources in Serbia: amateur repeaters, APRS digipeaters and beacons (SRS, BrandMeister) and RATEL's public registers: every radio licence (reg203, ~161k frequency assignments: holder, TX/RX, site, station/service type), FM radio and TV transmitters (reg204, kind broadcast), mobile network base stations of Telekom Srbija, Yettel and A1 (reg221, kind cell, one per operator site; bands and 2G-5G in raw) and registered licence-exempt Wi-Fi / RLAN stations and E-band links (reg215, kind link), registered CB radio stations (reg215, kind cb, 27 MHz, positions geocoded from the address), Meshtastic LoRa mesh routers / repeaters (jugomesh.com, kind mesh, 869.525 MHz) and The Things Network LoRaWAN gateways (kind lorawan, EU868, valid = online now).
+const INSTRUCTIONS = `Public radio signal sources in Serbia: amateur repeaters, APRS digipeaters and beacons (SRS, BrandMeister) and RATEL's public registers: every radio licence (reg203, ~161k frequency assignments: holder, TX/RX, site, station/service type), FM radio and TV transmitters (reg204, kind broadcast), mobile network base stations of Telekom Srbija, Yettel and A1 (reg221, kind cell, one per operator site; bands and 2G-5G in raw) and registered licence-exempt Wi-Fi / RLAN stations and E-band links (reg215, kind link), registered CB radio stations (reg215, kind cb, 27 MHz, positions geocoded from the address), Meshtastic LoRa mesh routers / repeaters (jugomesh.com, kind mesh, 869.525 MHz) The Things Network LoRaWAN gateways (kind lorawan, EU868, valid = online now) and aviation radio from OurAirports (kind aviation: VOR/DME/NDB navaids with Morse ident as callsign, airport tower/approach/ATIS frequencies) and RATEL EMF monitoring stations (kind emf: broadband electric field sensors, not transmitters).
 - Positions are WGS 84. Licences without a position are mobile stations. Some positions are guesses (city centre, grid square): see position_source and accuracy_m.
 - Police and military are not in the public register. There is no modulation / emission class data.
 - sector and owner of licences are guessed from the holder's name.
@@ -20,8 +20,8 @@ const INSTRUCTIONS = `Public radio signal sources in Serbia: amateur repeaters, 
 - Every result has a url to open it on the map; share those with the user.
 - band_plan tells what a frequency is allocated to in Serbia (RATEL band plan: services, applications, who may use it, licensing) and what you are likely to hear there; get_emitter includes the same for the emitter's frequency.`;
 
-const KINDS = ["repeater", "digipeater", "beacon", "licence", "broadcast", "cell", "link", "mesh", "cb", "lorawan"];
-const SOURCES = ["yu1srs-repeaters", "yu1srs-map", "brandmeister", "ratel-reg203", "ratel-reg204", "ratel-reg221", "ratel-reg215", "ratel-reg215-cb", "jugomesh", "ttn"];
+const KINDS = ["repeater", "digipeater", "beacon", "licence", "broadcast", "cell", "link", "mesh", "cb", "lorawan", "aviation", "emf"];
+const SOURCES = ["yu1srs-repeaters", "yu1srs-map", "brandmeister", "ratel-reg203", "ratel-reg204", "ratel-reg221", "ratel-reg215", "ratel-reg215-cb", "jugomesh", "ttn", "ourairports", "ratel-emf"];
 const SECTORS = sector.getSectors().map((item) => {
 	return item.id;
 }).concat(["amateur"]);

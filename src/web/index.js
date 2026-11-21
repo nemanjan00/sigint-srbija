@@ -6,6 +6,7 @@ const emitters = require("./emitters");
 const mcp = require("../mcp");
 const bandplan = require("../bandplan");
 const live = require("../live");
+const emf = require("../emf");
 
 // Built page (yarn build: src/web/client -> src/web/dist)
 const PUBLIC_DIR = path.join(__dirname, "dist");
@@ -87,6 +88,28 @@ app.get("/api/emitters/:id", (req, res) => {
 	}
 
 	res.json(emitter);
+});
+
+// RATEL EMF drive-campaign points for the heatmap (loaded when the layer is turned on)
+app.get("/api/emf/campaigns", (_req, res) => {
+	res.set("cache-control", "no-cache");
+	res.json(emf.getCampaignPoints());
+});
+
+// A fixed EMF station's values of the last two days (fetched from RATEL, cached 10 min)
+app.get("/api/emf/stations/:key/series", (req, res) => {
+	const station = emitters.getEmitterByKey("ratel-emf", req.params.key);
+
+	if (!station || !station.raw) {
+		res.status(404).json({ error: "not found" });
+		return;
+	}
+
+	emf.getStationSeries(station.raw).then((series) => {
+		res.json({ series: series });
+	}).catch((error) => {
+		res.status(502).json({ error: "RATEL EMF: " + error.message });
+	});
 });
 
 // Client-side routes (/e/<source>/<key>) are rendered by the same page

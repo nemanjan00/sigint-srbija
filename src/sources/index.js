@@ -15,7 +15,9 @@ const SOURCES = [
 	require("./ratel-reg215"),
 	require("./ratel-reg215-cb"),
 	require("./jugomesh"),
-	require("./ttn")
+	require("./ttn"),
+	require("./ourairports"),
+	require("./ratel-emf")
 ];
 
 const getSources = () => {

@@ -25,6 +25,8 @@ const APPROXIMATE_M = 1000;
 const LIST_CLUSTER_ZOOM = 12;
 const LIST_CLUSTER_SIZE = 6;
 const MAX_LIST = 500;
+// RATEL's colour scale for electric field (V/m), upper bounds; the drive-campaign layer uses it
+const EMF_SCALE = [[0.1, "#4169e1"], [0.5, "#40e0d0"], [1, "#32cd32"], [2, "#adff2f"], [6, "#ffd700"], [11, "#ffa500"], [18, "#ff4500"], [Infinity, "#ff0000"]];
 // on-air rings pulse at this rate
 const PULSE_MS = 80;
 const PULSE_PERIOD_MS = 1600;
@@ -41,7 +43,9 @@ const KINDS = {
 	link: { label: "Wi-Fi & links", color: "#94a3b8" },
 	mesh: { label: "Mesh (LoRa)", color: "#fb923c" },
 	cb: { label: "CB radio", color: "#facc15" },
-	lorawan: { label: "LoRaWAN gateways", color: "#e879f9" }
+	lorawan: { label: "LoRaWAN gateways", color: "#e879f9" },
+	aviation: { label: "Aviation", color: "#a3e635" },
+	emf: { label: "EMF sensors", color: "#cbd5e1" }
 };
 // Kinds of the amateur / community sources (SRS, BrandMeister, mesh, TTN); the rest are RATEL registers
 const AMATEUR_KINDS = ["repeater", "digipeater", "beacon", "mesh", "lorawan"];
@@ -56,7 +60,9 @@ const SOURCES = {
 	"ratel-reg215": { label: "RATEL Wi-Fi & links", color: "#94a3b8" },
 	"ratel-reg215-cb": { label: "RATEL CB radio", color: "#facc15" },
 	"jugomesh": { label: "Jugomesh", color: "#fb923c" },
-	"ttn": { label: "TTN gateways", color: "#e879f9" }
+	"ttn": { label: "TTN gateways", color: "#e879f9" },
+	"ourairports": { label: "OurAirports", color: "#a3e635" },
+	"ratel-emf": { label: "RATEL EMF", color: "#cbd5e1" }
 };
 
 // Frequency presets (Hz). Emitters match when their TX range overlaps.
@@ -183,7 +189,9 @@ const s = state({
 	// Hoseline player: { talkgroup, status, caller, level } or null
 	player: null,
 	// ticks every second while a call is on air (call timers)
-	clock: Date.now()
+	clock: Date.now(),
+	// RATEL EMF drive-campaign heatmap layer
+	emfHeatmap: false
 });
 
 const frequencyRange = () => {
@@ -570,6 +578,84 @@ const setLinks = (visibleIds) => {
 	map.getSource("links").setData({ type: "FeatureCollection", features: features });
 };
 
+// --- RATEL EMF drive-campaign layer ----------------------------------------
+
+let emfCampaigns = null;
+
+const emfColor = ["step", ["get", "v"], EMF_SCALE[0][1]].concat(EMF_SCALE.slice(0, -1).flatMap((step, index) => {
+	return [step[0], EMF_SCALE[index + 1][1]];
+}));
+
+const addEmfLayers = (payload) => {
+	emfCampaigns = payload.campaigns;
+	map.addSource("emf", {
+		type: "geojson",
+		data: {
+			type: "FeatureCollection",
+			features: payload.points.map((point) => {
+				return { type: "Feature", geometry: { type: "Point", coordinates: [point[1], point[0]] }, properties: { v: point[2], c: point[3] } };
+			})
+		}
+	});
+
+	// under the clusters, one dot per measurement in RATEL's colours; the strongest on top.
+	// (Not a density heatmap: the car measured every few seconds, so density would show the route, not the field.)
+	const beforeId = map.getLayer("cluster-glow") ? "cluster-glow" : undefined;
+
+	map.addLayer({
+		id: "emf-points",
+		type: "circle",
+		source: "emf",
+		layout: { "circle-sort-key": ["get", "v"] },
+		paint: {
+			"circle-color": emfColor,
+			"circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 1.5, 12, 3, 17, 7],
+			"circle-blur": ["interpolate", ["linear"], ["zoom"], 8, 0.6, 14, 0],
+			"circle-opacity": 0.85
+		}
+	}, beforeId);
+
+	map.on("click", "emf-points", (event) => {
+		const point = event.features[0].properties;
+		const campaign = emfCampaigns[point.c] || {};
+
+		new maplibregl.Popup({ closeButton: false, className: "emf-popup" })
+			.setLngLat(event.lngLat)
+			.setHTML("<b>" + Number(point.v).toFixed(2) + " V/m</b><br>" + (campaign.name || "") + (campaign.first_time ? " · " + campaign.first_time.slice(0, 10) : ""))
+			.addTo(map);
+	});
+};
+
+const setEmfLayer = (visible) => {
+	if (!visible && !map.getLayer("emf-points")) {
+		return;
+	}
+
+	const show = () => {
+		map.setLayoutProperty("emf-points", "visibility", visible ? "visible" : "none");
+	};
+
+	if (map.getSource("emf")) {
+		show();
+		return;
+	}
+
+	fetchJson("/api/emf/campaigns").then((payload) => {
+		addEmfLayers(payload);
+		show();
+	});
+};
+
+const emfLegend = () => {
+	return el("div", { class: "grid gap-1.5 rounded-lg border border-white/5 bg-black/20 p-2.5 text-[11px] text-muted-foreground" },
+		el("div", { class: "flex flex-wrap gap-x-2.5 gap-y-1" }, ...EMF_SCALE.map((step, index) => {
+			const low = index === 0 ? 0 : EMF_SCALE[index - 1][0];
+			return el("span", { class: "flex items-center gap-1 font-mono" }, el("span", { class: "size-2 rounded-full", style: "background:" + step[1] }),
+				step[0] === Infinity ? "> " + low : low + "-" + step[0]);
+		}), el("span", {}, "V/m")),
+		el("span", {}, "Broadband (100 kHz - 7 GHz), the sum of every transmitter nearby, measured once from a car. Click a dot for its value."));
+};
+
 // --- live: BrandMeister on-air state and Hoseline ---------------------------
 
 let pulseTimer = null;
@@ -784,6 +870,10 @@ const filterParams = () => {
 		params.set("dups", "1");
 	}
 
+	if (s.emfHeatmap) {
+		params.set("emf", "1");
+	}
+
 	if (s.explorerOpen && explorerView) {
 		params.set("spectrum", explorerView);
 	}
@@ -822,6 +912,7 @@ const applyFilterQuery = (search) => {
 	s.activeOnly = params.has("active") ? params.get("active") === "1" : DEFAULT_FILTER.activeOnly;
 	s.preciseOnly = params.has("precise") ? params.get("precise") === "1" : DEFAULT_FILTER.preciseOnly;
 	s.showDuplicates = params.get("dups") === "1";
+	s.emfHeatmap = params.get("emf") === "1";
 	explorerView = /^[\d.]+,[\d.]+$/.test(params.get("spectrum") || "") ? params.get("spectrum") : "";
 	s.explorerOpen = explorerView !== "";
 
@@ -1317,7 +1408,9 @@ const filterPanel = () => {
 		el("div", { class: "grid gap-4" },
 			switchRow("active-only", "Valid licences only", "Hide expired RATEL licences and broadcast assignments", [s, "activeOnly"]),
 			switchRow("precise-only", "Precise positions only", "Hide city-level / grid-square guesses", [s, "preciseOnly"]),
-			switchRow("show-duplicates", "Show every listing", "One pin per source instead of one per station", [s, "showDuplicates"])),
+			switchRow("show-duplicates", "Show every listing", "One pin per source instead of one per station", [s, "showDuplicates"]),
+			switchRow("emf-heatmap", "EMF drive tests", "RATEL's measured electric field along driven routes in 13 towns (2024-2025)", [s, "emfHeatmap"]),
+			when(() => s.emfHeatmap, emfLegend)),
 		Separator({ class: "bg-white/5" }),
 		section("Data",
 			el("div", { class: "grid gap-1.5 text-xs" },
@@ -1412,6 +1505,11 @@ const coordinateSourceLabel = (row) => {
 };
 
 const frequencyBlock = (detail) => {
+	// measuring stations don't transmit
+	if (detail.kind === "emf") {
+		return null;
+	}
+
 	const tile = (label, low, high) => {
 		return el("div", { class: "grid gap-0.5 rounded-xl border border-white/5 bg-black/25 px-3 py-2.5" },
 			el("span", { class: "text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground" }, label),
@@ -1725,6 +1823,72 @@ const linkBlock = (detail) => {
 		el("span", { class: "text-[11px] text-muted-foreground" }, "Applicant, address, SSID and MAC are in the register but not collected here."));
 };
 
+const emfSparkline = (series) => {
+	const width = 360;
+	const height = 80;
+	const values = series.map((point) => {
+		return point.field_vm;
+	});
+	const max = Math.max.apply(null, values.concat([0.1]));
+	const first = Date.parse(series[0].time);
+	const span = Math.max(1, Date.parse(series[series.length - 1].time) - first);
+	const points = series.map((point) => {
+		return ((Date.parse(point.time) - first) / span * width).toFixed(1) + "," + (height - point.field_vm / max * (height - 4) - 2).toFixed(1);
+	}).join(" ");
+	const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+
+	svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+	svg.setAttribute("preserveAspectRatio", "none");
+	svg.setAttribute("class", "h-20 w-full");
+	svg.innerHTML = "<polyline fill=\"none\" stroke=\"" + KINDS.emf.color + "\" stroke-width=\"1.5\" vector-effect=\"non-scaling-stroke\" points=\"" + points + "\"/>";
+
+	return el("div", { class: "grid gap-1" },
+		el("div", { class: "rounded-lg border border-white/5 bg-black/25 p-2" }, svg),
+		el("div", { class: "flex justify-between font-mono text-[10px] text-muted-foreground" },
+			el("span", {}, new Date(first).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })),
+			el("span", {}, "max " + max.toFixed(2) + " V/m"),
+			el("span", {}, "now")));
+};
+
+// RATEL EMF sensor: latest value and the last two days (fetched through our server, cached there)
+const emfBlock = (detail) => {
+	if (detail.kind !== "emf") {
+		return null;
+	}
+
+	const status = state({ series: null, error: "" });
+
+	fetchJson("/api/emf/stations/" + encodeURIComponent(detail.source_key) + "/series").then((payload) => {
+		status.series = payload.series;
+	}).catch(() => {
+		status.error = "RATEL's measurement page did not answer.";
+	});
+
+	return el("div", { class: "grid gap-2" },
+		SubHeading("Electric field (live)"),
+		when(() => status.series !== null || status.error !== "", () => {
+			const series = untracked(() => {
+				return status.series || [];
+			});
+			const latest = series[series.length - 1];
+
+			if (!latest) {
+				return el("span", { class: "text-xs text-muted-foreground" }, status.error || "No values in the last two days.");
+			}
+
+			return el("div", { class: "grid gap-2" },
+				el("div", { class: "flex items-baseline gap-3" },
+					el("span", { class: "font-mono text-2xl font-medium" }, latest.field_vm.toFixed(2)),
+					el("span", { class: "text-xs text-muted-foreground" }, "V/m · " + formatAgo(Date.parse(latest.time), Date.now())),
+					latest.exposure !== null ? el("span", { class: "ml-auto text-xs text-muted-foreground" }, (latest.exposure * 100).toFixed(2) + " % of the limit") : null),
+				emfSparkline(series));
+		}, () => {
+			return el("div", { class: "grid place-items-center py-6" }, el("div", { class: "spinner" }));
+		}),
+		el("span", { class: "text-[11px] text-muted-foreground" }, "Broadband 100 kHz - 7 GHz: every transmitter around adds up. 6-minute values, about an hour behind. ",
+			el("a", { class: "text-primary hover:underline", target: "_blank", rel: "noreferrer", href: "https://emf.ratel.rs/results/details/cyr/" + detail.source_key + "/gps:" + detail.lat.toFixed(8) + "," + detail.lon.toFixed(8) + "/params:1100111" }, "RATEL ↗")));
+};
+
 const gatewayBlock = (detail) => {
 	const raw = detail.raw || {};
 
@@ -2007,6 +2171,7 @@ const detailView = (detail) => {
 		cellBlock(detail),
 		linkBlock(detail),
 		gatewayBlock(detail),
+		emfBlock(detail),
 		licenceBlock(detail),
 		rawBlock(detail.raw));
 };
@@ -2557,6 +2722,12 @@ Promise.all([loadData(), mapReady]).then(() => {
 	onChange(() => {
 		return s.live;
 	}, setOnAir);
+	onChange(() => {
+		return s.emfHeatmap;
+	}, (visible) => {
+		setEmfLayer(visible);
+		replaceUrl();
+	}, { immediate: true });
 	followLive();
 });
 
