@@ -55,9 +55,11 @@ const toCall = (session) => {
 
 	return {
 		callsign: session.SourceCall || null,
-		// private calls go to a person: only say it was one
+		name: session.SourceName || null,
 		talkgroup: group ? session.DestinationID : null,
 		private: !group,
+		// private calls: the station called
+		to: group ? null : (session.DestinationCall || session.DestinationID || null),
 		slot: session.Slot || null,
 		start: session.Start * 1000,
 		stop: session.Stop ? session.Stop * 1000 : null

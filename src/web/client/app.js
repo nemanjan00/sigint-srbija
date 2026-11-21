@@ -1847,8 +1847,8 @@ const formatDuration = (ms) => {
 };
 
 const callText = (call) => {
-	const target = call.private ? "private call" : "TG " + call.talkgroup;
-	return [call.callsign || "?", "→ " + target, call.slot ? "TS" + call.slot : null].filter(Boolean).join(" ");
+	const target = call.private ? "private call " + (call.to || "") : "TG " + call.talkgroup;
+	return [call.callsign || "?", call.name ? "(" + call.name + ")" : null, "→ " + target.trim(), call.slot ? "TS" + call.slot : null].filter(Boolean).join(" ");
 };
 
 // Talkgroups to offer for listening: the published timeslot talkgroups, then the ones heard here
