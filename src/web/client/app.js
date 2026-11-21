@@ -875,7 +875,7 @@ const setAircraftLayer = liveLayer({
 });
 
 const aprsLegend = () => {
-	return el("div", { class: "-mt-2 grid gap-1.5 text-[11px] text-muted-foreground" },
+	return el("div", { class: "grid gap-1.5 text-[11px] text-muted-foreground" },
 		el("div", { class: "flex flex-wrap gap-x-2.5 gap-y-1" }, ...Object.keys(APRS_COLORS).map((category) => {
 			return el("span", { class: "flex items-center gap-1" }, el("span", { class: "size-2 rounded-full", style: "background:" + APRS_COLORS[category] }), APRS_LABELS[category]);
 		})),
@@ -1566,6 +1566,58 @@ const resetFilters = () => {
 	s.showDuplicates = false;
 };
 
+// Live layers (not emitters): one chip each, plus "only live" which hides every fixed station
+const LIVE_LAYERS = [
+	{ key: "aircraftLayer", label: "Aircraft", color: "#f8fafc", count: "aircraftCount", hint: "ADS-B / MLAT positions from adsb.lol, every 10 s" },
+	{ key: "aprsLayer", label: "APRS", color: APRS_COLORS.station, count: "aprsCount", hint: "Stations heard on APRS-IS in the last 6 hours, as on aprs.fi" },
+	{ key: "emfHeatmap", label: "EMF drive tests", color: EMF_SCALE[3][1], count: null, hint: "RATEL's measured electric field along driven routes in 13 towns (2024-2025)" }
+];
+
+const liveChips = () => {
+	const onlyLive = () => {
+		return s.kinds.length === 0;
+	};
+
+	return el("div", { class: "grid gap-2" },
+		el("div", { class: "flex flex-wrap gap-1.5" }, ...LIVE_LAYERS.map((layer) => {
+			return el("button", {
+				type: "button",
+				title: layer.hint,
+				class: () => {
+					return "flex h-8 items-center gap-2 rounded-full border px-3 text-xs " + (s[layer.key] ? "border-white/20 bg-white/10 text-foreground" : "border-white/10 text-muted-foreground opacity-60 hover:opacity-100");
+				},
+				onclick: () => {
+					s[layer.key] = !s[layer.key];
+				}
+			},
+			el("span", { class: "dot", style: "color:" + layer.color }),
+			layer.label,
+			layer.count ? el("span", { class: "font-mono text-[10px] text-muted-foreground" }, () => {
+				return s[layer.key] ? formatNumber(s[layer.count]) : "";
+			}) : null);
+		})),
+		el("button", {
+			type: "button",
+			class: "justify-self-start text-[11px] text-primary hover:underline",
+			onclick: () => {
+				if (onlyLive()) {
+					s.kinds = Object.keys(KINDS);
+					return;
+				}
+
+				s.kinds = [];
+
+				if (!s.aircraftLayer && !s.aprsLayer && !s.emfHeatmap) {
+					s.aircraftLayer = true;
+				}
+			}
+		}, () => {
+			return onlyLive() ? "Show fixed stations again" : "Show only live layers (hide fixed stations)";
+		}),
+		when(() => s.aprsLayer, aprsLegend),
+		when(() => s.emfHeatmap, emfLegend));
+};
+
 const switchRow = (id, label, hint, binding) => {
 	return el("div", { class: "flex items-center justify-between gap-3" },
 		el("div", { class: "grid gap-0.5" },
@@ -1621,6 +1673,7 @@ const filterPanel = () => {
 			el("span", { class: "text-sm text-muted-foreground" }, () => "of " + formatNumber(s.total) + " on the map")),
 		el("div", { class: "max-md:hidden" }, searchBox("search"))),
 	el("div", { class: "grid gap-6 p-5" },
+		section("Live", liveChips()),
 		section("Kind", chipGroup(KINDS, [s, "kinds"], kindCounts)),
 		section("Source", chipGroup(SOURCES, [s, "sources"], sourceCounts)),
 		section("Band",
@@ -1646,17 +1699,7 @@ const filterPanel = () => {
 		el("div", { class: "grid gap-4" },
 			switchRow("active-only", "Valid licences only", "Hide expired RATEL licences and broadcast assignments", [s, "activeOnly"]),
 			switchRow("precise-only", "Precise positions only", "Hide city-level / grid-square guesses", [s, "preciseOnly"]),
-			switchRow("show-duplicates", "Show every listing", "One pin per source instead of one per station", [s, "showDuplicates"]),
-			switchRow("emf-heatmap", "EMF drive tests", "RATEL's measured electric field along driven routes in 13 towns (2024-2025)", [s, "emfHeatmap"]),
-			when(() => s.emfHeatmap, emfLegend),
-			switchRow("aprs-layer", "APRS live", "Stations heard on APRS-IS in the last 6 hours, as on aprs.fi", [s, "aprsLayer"]),
-			when(() => s.aprsLayer, aprsLegend),
-			switchRow("aircraft-layer", "Aircraft live", "ADS-B / MLAT positions from adsb.lol, every 10 s", [s, "aircraftLayer"]),
-			when(() => s.aircraftLayer, () => {
-				return el("span", { class: "-mt-2 text-xs text-muted-foreground" }, () => {
-					return s.aircraftCount + " aircraft in view of the feed";
-				});
-			})),
+			switchRow("show-duplicates", "Show every listing", "One pin per source instead of one per station", [s, "showDuplicates"])),
 		Separator({ class: "bg-white/5" }),
 		section("Data",
 			el("div", { class: "grid gap-1.5 text-xs" },

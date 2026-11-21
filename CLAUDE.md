@@ -104,7 +104,7 @@ CTCSS (PL) tone and DMR colour code / timeslot talkgroups parsed from the amateu
 
 - APRS (`src/aprs`, `src/services/aprs-is`): the web process keeps one APRS-IS connection (rotate.aprs2.net:14580, read-only login `SIGINTRS` pass -1 — aprsc refuses `N0CALL` — filter `r/44.1/20.9/320`), parses with `aprs-parser`. Memory only, 6 h: last position per station within ~0.3° of Serbia (category digi / igate / weather / object / station from symbol + comment) and per callsign when heard (own packets, digipeated = `CALL*` in the path, gated = call after qAR/qAO). `GET /api/aprs` (map layer "APRS live", `?aprs=1`, polled every 30 s); `getEmitter().aprs` → details "APRS live" for digipeaters/beacons/repeaters; MCP `get_emitter.aprs`. aprs.fi itself isn't used: its API needs a key and its terms don't allow republishing; it shows the same APRS-IS packets.
 - Aircraft (`src/aircraft`, `src/services/adsb-lol`): adsb.lol `/v2/lat/44.1/lon/20.9/dist/190` (no CORS). One shared copy for everyone, refreshed at most every 10 s and only on demand (a request finding it stale starts one fetch). `GET /api/aircraft` (layer "Aircraft live", `?air=1`, polled every 10 s; plane icon rotated by track, label flight + FL). Nothing stored.
-- Both layers are client-side `liveLayer()` instances: they poll only while switched on and the tab is visible.
+- Both layers are client-side `liveLayer()` instances: they poll only while switched on and the tab is visible. Toggles: the "Live" chips at the top of the filter panel (`LIVE_LAYERS`: Aircraft, APRS, EMF drive tests); "Show only live layers" empties `s.kinds` (URL `?kind=`) to hide every fixed station.
 - `SIGINT_LIVE=0` stops BrandMeister and APRS-IS connections.
 
 ## Licence holder sector
