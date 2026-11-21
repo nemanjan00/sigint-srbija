@@ -12,6 +12,7 @@ const STATIONS_PAGE = "cyr/rezultati-merenja/";
 const CAMPAIGNS_PAGE = "drive-campaign/results/-/cyr";
 // chart series shown: field level only (the page's params bit mask)
 const SERIES_PARAMS = "1000001";
+const SERIES_TIMEOUT_MS = 10000;
 
 const textOf = (html) => {
 	return html.replace(/<[^>]+>/g, "|").split("|").map((part) => {
@@ -109,11 +110,12 @@ const ratelEmf = {
 	 * @param {Date} until
 	 * @returns {Promise<Array<{ time: string, field_vm: number, exposure: number|null }>>} exposure = upper estimate as a fraction of the limit
 	 */
-	getStationSeries: withRetry((station, from, until) => {
+	getStationSeries: (station, from, until) => {
 		const path = "results/details/cyr/" + station.id + "/from:" + ratelDate(from) + "/until:" + ratelDate(until) +
 			"/params:" + SERIES_PARAMS + "/gps:" + station.lat.toFixed(8) + "," + station.lon.toFixed(8);
 
-		return ratelEmf._client.get(path).then((response) => {
+		// a visitor is waiting: one attempt, short timeout
+		return ratelEmf._client.get(path, { timeout: { request: SERIES_TIMEOUT_MS }, retry: { limit: 0 } }).then((response) => {
 			const html = response.body;
 			const labels = /labels : \[(.*?)\]/s.exec(html);
 			const fields = seriesAfter(html, "Ниво поља") || [];
@@ -128,7 +130,7 @@ const ratelEmf = {
 				return point.time && Number.isFinite(point.field_vm);
 			});
 		});
-	})
+	}
 };
 
 module.exports = ratelEmf;

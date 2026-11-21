@@ -5,6 +5,8 @@ const storage = require("../storage");
 const ratelEmf = require("../services/ratel-emf");
 
 const SERIES_CACHE_MS = 10 * 60 * 1000;
+// RATEL unreachable (it refuses the production server): don't make every visitor wait again
+const FAILURE_CACHE_MS = 5 * 60 * 1000;
 const SERIES_DAYS = 2;
 const COORD_DECIMALS = 5;
 
@@ -99,19 +101,20 @@ const getCampaignPoints = () => {
 const getStationSeries = (station) => {
 	const cached = seriesCache.get(station.id);
 
-	if (cached && Date.now() - cached.at < SERIES_CACHE_MS) {
+	if (cached && Date.now() - cached.at < (cached.failed ? FAILURE_CACHE_MS : SERIES_CACHE_MS)) {
 		return cached.promise;
 	}
 
 	const until = new Date();
 	const from = new Date(until.getTime() - (SERIES_DAYS - 1) * 24 * 60 * 60 * 1000);
-	const promise = ratelEmf.getStationSeries(station, from, until).catch((error) => {
-		seriesCache.delete(station.id);
+	const entry = { at: Date.now(), failed: false, promise: null };
+
+	entry.promise = ratelEmf.getStationSeries(station, from, until).catch((error) => {
+		entry.failed = true;
 		throw error;
 	});
-
-	seriesCache.set(station.id, { at: Date.now(), promise: promise });
-	return promise;
+	seriesCache.set(station.id, entry);
+	return entry.promise;
 };
 
 module.exports = {

@@ -2100,7 +2100,7 @@ const emfBlock = (detail) => {
 	fetchJson("/api/emf/stations/" + encodeURIComponent(detail.source_key) + "/series").then((payload) => {
 		status.series = payload.series;
 	}).catch(() => {
-		status.error = "RATEL's EMF site did not answer our server (it may refuse connections from outside Serbia). Open it on RATEL below.";
+		status.error = "Live values are unavailable: RATEL's EMF site refuses connections from our server (it is outside Serbia). The station's chart opens on RATEL from the link below.";
 	});
 
 	return el("div", { class: "grid gap-2" },
