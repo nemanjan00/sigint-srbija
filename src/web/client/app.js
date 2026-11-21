@@ -796,9 +796,12 @@ const setAprsLayer = liveLayer({
 	}
 });
 
-// Plane icon: an arrow pointing up (north), rotated by track
+// Plane icon: a top-down airliner silhouette, nose up (north), rotated by track
+const PLANE_OUTLINE = [[20, 1], [22.2, 4], [22.4, 13], [38, 21.5], [38, 25], [22.4, 21], [22, 31], [28, 35], [28, 37.5], [20, 35.5],
+	[12, 37.5], [12, 35], [18, 31], [17.6, 21], [2, 25], [2, 21.5], [17.6, 13], [17.8, 4]];
+
 const addPlaneIcon = () => {
-	const size = 32;
+	const size = 40;
 	const canvas = document.createElement("canvas");
 	const context = canvas.getContext("2d");
 
@@ -807,11 +810,15 @@ const addPlaneIcon = () => {
 	context.fillStyle = "#f8fafc";
 	context.strokeStyle = "#0b1220";
 	context.lineWidth = 2;
+	context.lineJoin = "round";
 	context.beginPath();
-	context.moveTo(16, 2);
-	context.lineTo(27, 28);
-	context.lineTo(16, 22);
-	context.lineTo(5, 28);
+	PLANE_OUTLINE.forEach((point, index) => {
+		if (index === 0) {
+			context.moveTo(point[0], point[1]);
+		} else {
+			context.lineTo(point[0], point[1]);
+		}
+	});
 	context.closePath();
 	context.stroke();
 	context.fill();
@@ -840,7 +847,7 @@ const setAircraftLayer = liveLayer({
 			source: "aircraft",
 			layout: {
 				"icon-image": "plane",
-				"icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.45, 12, 0.7],
+				"icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.5, 12, 0.8],
 				"icon-rotate": ["get", "track"],
 				"icon-rotation-alignment": "map",
 				"icon-allow-overlap": true,
