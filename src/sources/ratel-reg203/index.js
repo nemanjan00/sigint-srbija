@@ -8,7 +8,7 @@ const reg203Database = require("../../reg203/database");
 const storage = require("../../storage");
 
 const CSV_DIR = path.join(storage.DB_DIR, "reg203");
-// raw exports are ~100 MB each; keep the newest few
+// raw exports are ~150 MB each; keep the newest few
 const KEEP_CSV = Number(process.env.REG203_KEEP_CSV) || 7;
 
 const pruneCsv = () => {

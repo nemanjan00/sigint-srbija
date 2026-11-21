@@ -10,7 +10,7 @@ Collects public signal sources in Serbia (repeaters, beacons, licences, ...) int
 
 ## Commands
 
-- `yarn fetch [source-id ...]` — fetch sources into `data/sigint.sqlite`, then merge duplicates and resolve coordinates (`src/geo`). ~25 s for all; reg203 downloads ~100 MB.
+- `yarn fetch [source-id ...]` — fetch sources into `data/sigint.sqlite`; duplicates and coordinates (`src/geo`, ~0.1 s) are resolved after **every** source, so a crash mid-run never leaves unlinked duplicates. ~25 s for all; reg203 downloads ~150 MB.
 - `yarn reg203-enrich [--limit-pages N]` — HTML-only licence fields from ~8k RATEL pages (~15 min). Use `--limit-pages 3` to test.
 - `yarn gazetteer [--retry-missing]` — geocode unresolved site names (Nominatim, 1 req/s).
 - `yarn bandplan [pdf]` — parse the band plan PDF into `data/bandplan.json` (tracked; needs poppler `pdftotext`). Default PDF path is the `lib/` mirror (`yarn ratel-docs regulativa-elektronske-komunikacije`).
@@ -38,6 +38,7 @@ Collects public signal sources in Serbia (repeaters, beacons, licences, ...) int
 - registar.ratel.rs omits its TLS intermediate; `src/services/ratel-registry` fetches it from Sectigo and adds it to the CA list. Never disable verification.
 - reg203 search pages are 1-based (`page=0` aliases page 1); the highest linked page is the last.
 - Express 5 passes listen errors to the `listen` callback instead of throwing.
+- The server (4 GB, shared with other stacks, ~700 MB free) OOM-killed the nightly fetch when the reg203 export grew to 238k rows (2026-11-21). reg203 is therefore streamed end to end: `parser.parseExportFile` (csv-parse stream) → `replaceAssignments(fill)` → `getEmitters()` returns an iterator → `storage.replaceEmitters` accepts any iterable. Peak ~150 MB instead of ~1 GB. Don't reintroduce whole-file / `.all()` arrays for reg203.
 
 ## Web UI (map)
 
@@ -119,7 +120,7 @@ RATEL "Plan namene RF opsega — Tabela 1" (PDF, Dec 2025), parsed from `pdftote
 ## Sources
 
 - `yu1srs-repeaters` — https://yu1srs.org.rs/repetitori-u-srbiji-tabelarno/ — SRS table (DMR/VHF/UHF/RUM repeaters, APRS, beacons). No coordinates; resolved via geo.
-- `yu1srs-map` — Google My Maps KML behind https://yu1srs.org.rs/repetitori-u-srbiji/ — same network with coordinates, plus repeaters in neighbouring countries.
+- `yu1srs-map` — Google My Maps KML behind https://yu1srs.org.rs/repetitori-u-srbiji/ — same network with coordinates, plus repeaters in neighbouring countries. Its unnamed LineStrings (RU network backbone + a few VHF/UHF links) become `raw.links = [{ key, color }]` on both end stations (vertex snapped to the nearest station of the line's layer within 200 m, else nearest station). `GET /api/map` returns `links: [[fromId, toId, color]]` between main listings; the map draws them (layer `links-line`, shown when both ends pass the filters) and details list "Linked to".
 - `brandmeister` — BrandMeister API, master 2302, DMR IDs 220xxx (repeaters only). Some positions are city centres (YU0DZA, YU0DKS ~8-10 km off the map).
 - `ratel-reg203` — https://registar.ratel.rs/cyr/reg203 — every RF licence (~161k assignments); raw CSV kept in `data/reg203/`.
 - `ratel-reg204` — broadcasting register (kind `broadcast`, mode FM / TV), full CSV export with status. As of 2026-11 every TV assignment is marked expired (most on 2025-12-25), so TV shows only with "valid only" off.

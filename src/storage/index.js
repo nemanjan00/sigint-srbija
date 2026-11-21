@@ -113,19 +113,16 @@ const transaction = (fn) => {
 };
 
 // Duplicate keys within one source get "#2", "#3", ... appended
-const withUniqueKeys = (emitters) => {
-	const seen = {};
+// Duplicate keys within one fetch get "#2", "#3", ... (seen = counts so far)
+const uniqueKey = (seen, emitter) => {
+	const key = String(emitter.source_key);
+	seen[key] = (seen[key] || 0) + 1;
 
-	return emitters.map((emitter) => {
-		const key = String(emitter.source_key);
-		seen[key] = (seen[key] || 0) + 1;
+	if (seen[key] === 1) {
+		return emitter;
+	}
 
-		if (seen[key] === 1) {
-			return emitter;
-		}
-
-		return Object.assign({}, emitter, { source_key: key + "#" + seen[key] });
-	});
+	return Object.assign({}, emitter, { source_key: key + "#" + seen[key] });
 };
 
 const toRow = (source, emitter) => {
@@ -149,20 +146,28 @@ const toRow = (source, emitter) => {
  * @param {Object} source - Source from registry (id, description, url)
  * @param {Object[]} emitters - Objects with EMITTER_COLUMNS keys (source is filled in)
  */
+/**
+ * Replace all rows of a source
+ * @param {Object} source - { id, description, url }
+ * @param {Iterable<Object>} emitters - array or iterator (big sources stream rows to keep memory flat)
+ * @returns {number} rows saved
+ */
 const replaceEmitters = (source, emitters) => {
-	const unique = withUniqueKeys(emitters);
+	const seen = {};
+	let count = 0;
 
 	transaction((db) => {
 		const insert = db.prepare(INSERT_EMITTER_SQL);
 		db.prepare("DELETE FROM emitters WHERE source = ?").run(source.id);
-		unique.forEach((emitter) => {
-			insert.run.apply(insert, toRow(source, emitter));
+		Iterator.from(emitters).forEach((emitter) => {
+			insert.run.apply(insert, toRow(source, uniqueKey(seen, emitter)));
+			count++;
 		});
 		db.prepare("INSERT OR REPLACE INTO sources (id, description, url, fetched_at, emitter_count) VALUES (?, ?, ?, ?, ?)")
-			.run(source.id, source.description, source.url, new Date().toISOString().slice(0, 19) + "Z", unique.length);
+			.run(source.id, source.description, source.url, new Date().toISOString().slice(0, 19) + "Z", count);
 	});
 
-	return unique.length;
+	return count;
 };
 
 const getEmitters = (where, params) => {

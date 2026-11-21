@@ -237,11 +237,13 @@ const open = () => {
 		},
 
 		/**
-		 * Replace all assignments and code tables
-		 * @param {Object[]} assignments - Records from parser.toAssignment
+		 * Replace all assignments and code tables. The rows are streamed in by
+		 * fill (the export is too big to hold in memory on the server).
+		 * @param {function(function(Object)): Promise} fill - Gets insert(assignment) (records from parser.toAssignment), resolves when done
 		 * @param {{stationTypes: Object, serviceTypes: Object}} lookups - code -> name
+		 * @returns {Promise<{kept: number}>}
 		 */
-		replaceAssignments: (assignments, lookups) => {
+		replaceAssignments: (fill, lookups) => {
 			database.begin();
 			// keep HTML-only fields of assignments that did not change, so a
 			// re-fetch does not undo the (slow) enrichment until it runs again
@@ -249,28 +251,35 @@ const open = () => {
 				FROM reg203_assignments WHERE enriched = 1`);
 			db.exec("DELETE FROM reg203_assignments");
 			db.exec("INSERT INTO reg203_fts(reg203_fts) VALUES('rebuild')");
-			assignments.forEach((assignment) => {
+
+			const insert = (assignment) => {
 				insertAssignment.run.apply(insertAssignment, ASSIGNMENT_COLUMNS.map((column) => {
 					return assignment[column];
 				}));
-			});
-			[["reg203_station_types", lookups.stationTypes], ["reg203_service_types", lookups.serviceTypes]].forEach((table) => {
-				const insert = db.prepare("INSERT OR REPLACE INTO " + table[0] + " VALUES (?, ?)");
-				Object.keys(table[1]).forEach((code) => {
-					insert.run(code, table[1][code]);
+			};
+
+			return fill(insert).then(() => {
+				[["reg203_station_types", lookups.stationTypes], ["reg203_service_types", lookups.serviceTypes]].forEach((table) => {
+					const insertLookup = db.prepare("INSERT OR REPLACE INTO " + table[0] + " VALUES (?, ?)");
+					Object.keys(table[1]).forEach((code) => {
+						insertLookup.run(code, table[1][code]);
+					});
 				});
-			});
-			const kept = db.prepare(`UPDATE reg203_assignments AS a SET ${ENRICHMENT_COLUMNS.map((column) => {
-				return column + " = k." + column;
-			}).join(", ")}
-				FROM reg203_kept AS k WHERE ${ENRICHMENT_KEY.map((column) => {
+				const kept = db.prepare(`UPDATE reg203_assignments AS a SET ${ENRICHMENT_COLUMNS.map((column) => {
+					return column + " = k." + column;
+				}).join(", ")}
+					FROM reg203_kept AS k WHERE ${ENRICHMENT_KEY.map((column) => {
 		return "a." + column + " IS k." + column;
 	}).join(" AND ")}`).run().changes;
-			db.exec("DROP TABLE reg203_kept");
-			db.exec("INSERT INTO reg203_fts(reg203_fts) VALUES('rebuild')");
-			database.commit();
+				db.exec("DROP TABLE reg203_kept");
+				db.exec("INSERT INTO reg203_fts(reg203_fts) VALUES('rebuild')");
+				database.commit();
 
-			return { kept: kept };
+				return { kept: kept };
+			}).catch((error) => {
+				db.exec("ROLLBACK");
+				throw error;
+			});
 		},
 
 		// Apply fields parsed from an HTML row; returns true when a row matched
@@ -291,8 +300,9 @@ const open = () => {
 		},
 
 		// All assignments as global emitters (coordinates converted to WGS 84)
+		// Iterator, not an array: ~240k emitters at once don't fit the server's memory
 		getEmitters: () => {
-			return db.prepare("SELECT * FROM reg203_assignments ORDER BY id").all().map(toEmitter);
+			return db.prepare("SELECT * FROM reg203_assignments ORDER BY id").iterate().map(toEmitter);
 		}
 	};
 

@@ -1,5 +1,6 @@
 // Usage: yarn fetch [source-id ...]  (no ids = all sources)
-// Fetches sources into the global database, then resolves coordinates.
+// Fetches sources into the global database; duplicates and coordinates are
+// resolved after every source.
 const sources = require("../src/sources");
 const storage = require("../src/storage");
 const geo = require("../src/geo");
@@ -29,6 +30,10 @@ const fetchSource = (source) => {
 	return source.fetch().then((emitters) => {
 		const count = storage.replaceEmitters(source, emitters);
 		console.log(source.id + ": saved " + count + " emitters");
+		// replacing rows clears their duplicate links and borrowed positions;
+		// resolve now (~0.1 s) so a later crash (e.g. out of memory) can't
+		// leave the map with unlinked duplicates until the next run
+		geo.resolve();
 		return true;
 	}).catch((error) => {
 		console.error(source.id + ": failed");

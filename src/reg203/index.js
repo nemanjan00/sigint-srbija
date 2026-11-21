@@ -5,7 +5,8 @@
 //  * The search form paginates 20 rows per page (page=1..N, 1-based; page=0
 //    is an alias of page 1). The `source`
 //    selector (radio stations / aircraft / ships) is ignored server-side.
-//  * format=csv returns the WHOLE register (~100 MB, ~162k rows) as UTF-16LE
+//  * format=csv returns the WHOLE register (~150 MB, ~238k rows incl. expired
+//    licences, November 2026; ~100 MB / 162k a day earlier) as UTF-16LE
 //    with BOM, tab-separated, every field quoted, dates dd.mm.yyyy, coordinates
 //    DDMMSS, frequencies "123.4560 MHz" or "410.0000 MHz - 423.1250 MHz".
 //  * HTML rows carry fields the CSV lacks (holder name/address separately,
@@ -49,34 +50,40 @@ const download = (csvFile) => {
  * @param {string} csvFile - Path to the raw export
  */
 const build = (database, csvFile) => {
-	const parsed = parser.parseExport(fs.readFileSync(csvFile));
-
-	if (parsed.skipped > 0) {
-		console.error("  WARNING: " + parsed.skipped + " malformed rows skipped");
-	}
-
 	console.log("fetching code tables from the search form");
 
 	return ratelRegistry.getFormPage(REGISTER).then((html) => {
 		const form = parser.parseFormPage(html);
+		let counts = null;
 
-		console.log("indexing " + parsed.rows.length + " rows into SQLite");
-		const replaced = database.replaceAssignments(parsed.rows.map(parser.toAssignment), form);
-		console.log("  kept enrichment of " + replaced.kept + " unchanged assignments");
-		database.setMeta({
-			source_url: SOURCE_URL,
-			csv_file: path.resolve(csvFile),
-			csv_encoding: "UTF-16LE with BOM, tab-separated, quoted fields",
-			fetched_at: now(),
-			register_updated: form.updated || "",
-			row_count: parsed.rows.length,
-			coordinate_note: "lon_deg/lat_deg are converted from DDMMSS; datum is koord_sistem ('Bessel' = old Yugoslav/Hermannskogel datum, not WGS 84)."
+		console.log("indexing rows into SQLite");
+		return database.replaceAssignments((insert) => {
+			return parser.parseExportFile(csvFile, (row) => {
+				insert(parser.toAssignment(row));
+			}).then((result) => {
+				counts = result;
+			});
+		}, form).then((replaced) => {
+			if (counts.skipped > 0) {
+				console.error("  WARNING: " + counts.skipped + " malformed rows skipped");
+			}
+
+			console.log("  " + counts.rows + " rows, kept enrichment of " + replaced.kept + " unchanged assignments");
+			database.setMeta({
+				source_url: SOURCE_URL,
+				csv_file: path.resolve(csvFile),
+				csv_encoding: "UTF-16LE with BOM, tab-separated, quoted fields",
+				fetched_at: now(),
+				register_updated: form.updated || "",
+				row_count: counts.rows,
+				coordinate_note: "lon_deg/lat_deg are converted from DDMMSS; datum is koord_sistem ('Bessel' = old Yugoslav/Hermannskogel datum, not WGS 84)."
+			});
+
+			return {
+				rows: counts.rows,
+				updated: form.updated
+			};
 		});
-
-		return {
-			rows: parsed.rows.length,
-			updated: form.updated
-		};
 	});
 };
 

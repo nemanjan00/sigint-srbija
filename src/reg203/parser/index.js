@@ -1,5 +1,6 @@
 // Parsers for register reg203 (CSV export and HTML search pages)
-const parseCsv = require("csv-parse/sync").parse;
+const fs = require("fs");
+const parseCsvStream = require("csv-parse").parse;
 const ratelUtils = require("../../utils/ratel");
 
 const normWs = ratelUtils.normWs;
@@ -16,6 +17,15 @@ const CSV_COLUMNS = [
 	"Координантни систем", "Статус", "Датум", "Разлог"
 ];
 
+const CSV_OPTIONS = {
+	delimiter: "\t",
+	quote: "\"",
+	relax_quotes: true,
+	relax_column_count: true,
+	skip_empty_lines: true
+};
+const UTF16LE_BOM = [0xff, 0xfe];
+
 const ROW_REGEX = /<tr class="(?: |disabled)?">([\s\S]*?)<\/tr>\s*<tr class="hidden additional-data[^"]*">([\s\S]*?)<\/tr>/g;
 const TD_REGEX = /<td[^>]*>([\s\S]*?)<\/td>/g;
 
@@ -23,44 +33,53 @@ const isUtf16Export = (buffer) => {
 	return buffer.length >= 2 && ((buffer[0] === 0xff && buffer[1] === 0xfe) || (buffer[0] === 0xfe && buffer[1] === 0xff));
 };
 
-const decodeUtf16 = (buffer) => {
-	if (buffer[0] === 0xfe) {
-		return Buffer.from(buffer).swap16().toString("utf16le").slice(1);
-	}
-
-	return buffer.toString("utf16le").slice(1);
-};
-
 /**
- * Parse the raw export (UTF-16 with BOM, tab-separated, quoted)
- * @param {Buffer} buffer
- * @returns {{rows: string[][], skipped: number}} rows without header
+ * Parse the raw export file row by row (constant memory)
+ * @param {string} csvFile - UTF-16LE export with BOM
+ * @param {function(string[])} onRow - Called with every well-formed row (without header)
+ * @returns {Promise<{rows: number, skipped: number}>}
  */
-const parseExport = (buffer) => {
-	if (!isUtf16Export(buffer)) {
-		throw new Error("Unexpected export encoding, no UTF-16 BOM: " + JSON.stringify(buffer.slice(0, 40).toString("latin1")));
+const parseExportFile = (csvFile, onRow) => {
+	const head = Buffer.alloc(2);
+	const fd = fs.openSync(csvFile, "r");
+	fs.readSync(fd, head, 0, 2, 0);
+	fs.closeSync(fd);
+
+	if (head[0] !== UTF16LE_BOM[0] || head[1] !== UTF16LE_BOM[1]) {
+		return Promise.reject(new Error("Unexpected export encoding, no UTF-16LE BOM: " + JSON.stringify(head.toString("latin1"))));
 	}
 
-	const rows = parseCsv(decodeUtf16(buffer), {
-		delimiter: "\t",
-		quote: "\"",
-		relax_quotes: true,
-		relax_column_count: true,
-		skip_empty_lines: true
+	return new Promise((resolve, reject) => {
+		const counts = { rows: 0, skipped: 0 };
+		const csv = parseCsvStream(Object.assign({ encoding: "utf16le", bom: true }, CSV_OPTIONS));
+		let header = null;
+
+		csv.on("data", (row) => {
+			if (header === null) {
+				header = row.join("\t").replace(/^\ufeff/, "");
+
+				if (header !== CSV_COLUMNS.join("\t")) {
+					csv.destroy(new Error("Unexpected CSV header: " + JSON.stringify(row)));
+				}
+
+				return;
+			}
+
+			if (row.length !== CSV_COLUMNS.length) {
+				counts.skipped++;
+				return;
+			}
+
+			counts.rows++;
+			onRow(row);
+		});
+		csv.on("error", reject);
+		csv.on("end", () => {
+			resolve(counts);
+		});
+
+		fs.createReadStream(csvFile).on("error", reject).pipe(csv);
 	});
-
-	if (rows.length === 0 || rows[0].join("\t") !== CSV_COLUMNS.join("\t")) {
-		throw new Error("Unexpected CSV header: " + JSON.stringify(rows[0]));
-	}
-
-	const body = rows.slice(1).filter((row) => {
-		return row.length === CSV_COLUMNS.length;
-	});
-
-	return {
-		rows: body,
-		skipped: rows.length - 1 - body.length
-	};
 };
 
 // One export row -> assignment record (keys match database columns)
@@ -202,7 +221,7 @@ const parseFormPage = (html) => {
 module.exports = {
 	CSV_COLUMNS: CSV_COLUMNS,
 	isUtf16Export: isUtf16Export,
-	parseExport: parseExport,
+	parseExportFile: parseExportFile,
 	toAssignment: toAssignment,
 	parseSearchPage: parseSearchPage,
 	parseLastPage: parseLastPage,

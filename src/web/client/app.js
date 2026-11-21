@@ -84,7 +84,9 @@ const data = {
 	features: [],
 	haystacks: [],
 	lookups: { stationTypes: {}, serviceTypes: {} },
-	sources: []
+	sources: [],
+	// [fromId, toId, color]: links drawn between stations (SRS map RU network)
+	links: []
 };
 
 const loadData = () => {
@@ -118,6 +120,7 @@ const loadData = () => {
 		});
 		data.lookups = payload.lookups;
 		data.sources = payload.sources;
+		data.links = payload.links || [];
 	});
 };
 
@@ -342,6 +345,7 @@ const addLayers = () => {
 	});
 	map.addSource("selected", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
 	map.addSource("accuracy", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+	map.addSource("links", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
 
 	map.addLayer({
 		id: "accuracy-fill",
@@ -354,6 +358,19 @@ const addLayers = () => {
 		type: "line",
 		source: "accuracy",
 		paint: { "line-color": "#22d3ee", "line-opacity": 0.5, "line-width": 1, "line-dasharray": [2, 2] }
+	});
+
+	// links between stations, under the pins, in the source map's line colour
+	map.addLayer({
+		id: "links-line",
+		type: "line",
+		source: "links",
+		layout: { "line-cap": "round" },
+		paint: {
+			"line-color": ["coalesce", ["get", "color"], KINDS.repeater.color],
+			"line-width": ["interpolate", ["linear"], ["zoom"], 6, 1.5, 12, 3],
+			"line-opacity": 0.75
+		}
 	});
 
 	// clusters: cyan when all amateur, amber otherwise; a cyan glow marks amateur stations inside
@@ -489,6 +506,28 @@ const withFrequency = (row) => {
 	return borrowed ? Object.assign({}, row, borrowed) : row;
 };
 
+// Links whose both stations pass the filters
+const setLinks = (visibleIds) => {
+	if (!map.getSource("links")) {
+		return;
+	}
+
+	const features = data.links.filter((link) => {
+		return visibleIds.has(link[0]) && visibleIds.has(link[1]);
+	}).map((link) => {
+		const from = data.byId.get(link[0]);
+		const to = data.byId.get(link[1]);
+
+		return {
+			type: "Feature",
+			geometry: { type: "LineString", coordinates: [[from.lon, from.lat], [to.lon, to.lat]] },
+			properties: { color: link[2] }
+		};
+	});
+
+	map.getSource("links").setData({ type: "FeatureCollection", features: features });
+};
+
 const applyFilter = (filter) => {
 	const features = data.features.filter((_, index) => {
 		return matches(filter, data.rows[index], index);
@@ -501,6 +540,9 @@ const applyFilter = (filter) => {
 	data.visible = features.map((feature) => {
 		return withFrequency(data.byId.get(feature.properties.id));
 	});
+	setLinks(new Set(features.map((feature) => {
+		return feature.properties.id;
+	})));
 	[panelExplorer, fullExplorer].filter(Boolean).forEach((explorer) => {
 		explorer.setSignals(data.visible);
 	});
@@ -1596,6 +1638,29 @@ const listingsBlock = (detail) => {
 		}));
 };
 
+// Stations this one is linked to (lines on the map)
+const linksBlock = (detail) => {
+	if (!detail.links || detail.links.length === 0) {
+		return null;
+	}
+
+	return el("div", { class: "grid gap-1.5" },
+		SubHeading("Linked to (" + detail.links.length + ")"),
+		...detail.links.map((link) => {
+			return el("button", {
+				class: "group flex w-full items-center gap-2 rounded-lg border border-white/5 bg-black/20 px-3 py-2 text-left text-sm hover:border-white/15",
+				onclick: () => {
+					loadDetail(link.id);
+				}
+			},
+			el("span", { class: "h-0.5 w-4 flex-none rounded-full", style: "background:" + (link.color || KINDS.repeater.color) }),
+			el("span", { class: "flex-1 font-medium" }, link.name || link.callsign || link.source_key),
+			link.callsign && link.name && !link.name.includes(link.callsign) ? el("span", { class: "font-mono text-xs text-muted-foreground" }, link.callsign) : null,
+			ChevronRightIcon({ class: "size-4 text-muted-foreground opacity-0 group-hover:opacity-100" }));
+		}),
+		el("span", { class: "text-[11px] text-muted-foreground" }, "Links as drawn on the SRS repeater map."));
+};
+
 const sectorLabel = (id) => {
 	const sector = data.lookups.sectors.find((candidate) => {
 		return candidate.id === id;
@@ -1644,6 +1709,7 @@ const detailView = (detail) => {
 					} }, "Panorama from here"))) : null,
 			field("Position from", coordinateSourceLabel(detail) + (detail.coord_accuracy_m ? " · ±" + formatNumber(detail.coord_accuracy_m) + " m" : ""))),
 		listingsBlock(detail),
+		linksBlock(detail),
 		spectrumBlock(detail),
 		cellBlock(detail),
 		linkBlock(detail),

@@ -14,6 +14,9 @@
 		"node": true,
 		"commonjs": true
 	},
+	"globals": {
+		"Iterator": "readonly"
+	},
 	"extends": "eslint:recommended",
 	"rules": {
 		"indent": [

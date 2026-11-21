@@ -9,6 +9,43 @@ const MAP_COLUMNS = ["id", "lat", "lon", "source", "kind", "mode", "tx_hz", "tx_
 
 let cache = null;
 
+// Links drawn between stations (raw.links of a source, keys within the same
+// source) as [fromId, toId, color], each pair once. Ends are the main listing
+// of each station, so lines meet the pins the map shows.
+const loadLinks = (db) => {
+	const rows = db.prepare(`SELECT e.id, e.source, coalesce(e.duplicate_of, e.id) AS main, l.value->>'key' AS key, l.value->>'color' AS color
+		FROM emitters e, json_each(e.raw, '$.links') l WHERE e.raw->'links' IS NOT NULL`).all();
+	const findMain = db.prepare("SELECT coalesce(duplicate_of, id) AS main FROM emitters WHERE source = ? AND source_key = ?");
+	const seen = new Set();
+
+	return rows.reduce((links, row) => {
+		const other = findMain.get(row.source, row.key);
+
+		if (!other || other.main === row.main) {
+			return links;
+		}
+
+		const pair = Math.min(row.main, other.main) + "-" + Math.max(row.main, other.main);
+
+		if (seen.has(pair)) {
+			return links;
+		}
+
+		seen.add(pair);
+		return links.concat([[row.main, other.main, row.color || null]]);
+	}, []);
+};
+
+// Stations linked to an emitter: [{ id, source_key, callsign, name, location, color }]
+const linkedStations = (db, emitter, raw) => {
+	const find = db.prepare("SELECT id, source_key, callsign, name, location FROM emitters WHERE source = ? AND source_key = ?");
+
+	return ((raw && raw.links) || []).map((link) => {
+		const row = find.get(emitter.source, link.key);
+		return row ? Object.assign({}, row, { color: link.color || null }) : null;
+	}).filter(Boolean);
+};
+
 const loadLookups = (db) => {
 	const tableExists = db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'reg203_station_types'").get();
 
@@ -57,6 +94,7 @@ const getMapData = () => {
 		columns: MAP_COLUMNS,
 		rows: rows,
 		lookups: loadLookups(db),
+		links: loadLinks(db),
 		sources: db.prepare("SELECT * FROM sources ORDER BY id").all()
 	};
 
@@ -93,6 +131,7 @@ const getEmitter = (id) => {
 		result.record_url = ratelRegistry.getSearchUrl("reg203", { filter: result.raw.broj_dozvole });
 	}
 
+	result.links = linkedStations(db, emitter, result.raw);
 	result.spectrum = spectrum.getSpectrum(result);
 
 	return result;
