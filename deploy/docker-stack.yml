@@ -2,11 +2,14 @@
 # Docker Swarm stack on root@dmr.nemanja.top (/root/sigint-srbija/docker-stack.yml):
 #   docker stack deploy --with-registry-auth -c docker-stack.yml sigint-srbija
 # The database is copied to /data/sigint/sigint.sqlite on the host (see CLAUDE.md).
+# sigint.env (next to this file on the server only, chmod 600, never committed)
+# holds secrets: SIGINT_EMF_PROXY=http://user:pass@host:port/ (emf.ratel.rs refuses non-Serbian IPs).
 version: '3.5'
 
 services:
   web:
     image: ghcr.io/nemanjan00/sigint-srbija:latest
+    env_file: sigint.env
     environment:
       - SIGINT_DB=/data/sigint/sigint.sqlite
     volumes:
@@ -44,6 +47,7 @@ services:
   updater:
     image: ghcr.io/nemanjan00/sigint-srbija:latest
     command: ["node", "bin/cron.js"]
+    env_file: sigint.env
     environment:
       - SIGINT_DB=/data/sigint/sigint.sqlite
       - UPDATE_SCHEDULE=0 4 * * *

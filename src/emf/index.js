@@ -64,6 +64,16 @@ const replaceCampaigns = (campaigns) => {
 	});
 };
 
+// ids of the stored campaigns (a fetch skips the ~25 MB of campaign pages when RATEL lists the same ones)
+const getCampaignIds = () => {
+	const db = storage.getDatabase();
+
+	ensureSchema(db);
+	return db.prepare("SELECT id FROM emf_campaigns ORDER BY id").all().map((row) => {
+		return row.id;
+	});
+};
+
 const round = (value) => {
 	return Number(value.toFixed(COORD_DECIMALS));
 };
@@ -119,6 +129,7 @@ const getStationSeries = (station) => {
 
 module.exports = {
 	replaceCampaigns: replaceCampaigns,
+	getCampaignIds: getCampaignIds,
 	getCampaignPoints: getCampaignPoints,
 	getStationSeries: getStationSeries
 };

@@ -1,4 +1,5 @@
 const got = require("got-verbose");
+const HttpsProxyAgent = require("hpagent").HttpsProxyAgent;
 const withRetry = require("../../utils/retry").withRetry;
 
 // RATEL EMF monitoring (https://emf.ratel.rs): broadband (100 kHz - 7 GHz)
@@ -13,6 +14,10 @@ const CAMPAIGNS_PAGE = "drive-campaign/results/-/cyr";
 // chart series shown: field level only (the page's params bit mask)
 const SERIES_PARAMS = "1000001";
 const SERIES_TIMEOUT_MS = 10000;
+// emf.ratel.rs refuses connections from outside Serbia: the production server
+// reaches it through a proxy in Serbia (URL with credentials, from the
+// environment only — never commit it). Used for this host only.
+const PROXY = process.env.SIGINT_EMF_PROXY || null;
 
 const textOf = (html) => {
 	return html.replace(/<[^>]+>/g, "|").split("|").map((part) => {
@@ -55,9 +60,9 @@ const seriesAfter = (html, label) => {
 };
 
 const ratelEmf = {
-	_client: got.extend({
+	_client: got.extend(Object.assign({
 		prefixUrl: "https://emf.ratel.rs"
-	}),
+	}, PROXY ? { agent: { https: new HttpsProxyAgent({ proxy: PROXY, keepAlive: true }) } } : {})),
 
 	// [{ id, lat, lon, name, address, city, active }]
 	getStations: withRetry(() => {

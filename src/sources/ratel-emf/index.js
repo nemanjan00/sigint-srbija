@@ -4,7 +4,8 @@
 //   name      station name as published ("БГ - ОШ ..."), location = address, city = town
 //   active    "Мерење је активно"
 //   raw       sensor id (emf.ratel.rs id), position, status
-// The fetch also replaces the drive-campaign points (src/emf, heatmap).
+// The fetch also replaces the drive-campaign points (src/emf) when RATEL's campaign list changed.
+// Production reaches emf.ratel.rs through SIGINT_EMF_PROXY (see src/services/ratel-emf).
 const ratelEmf = require("../../services/ratel-emf");
 const emf = require("../../emf");
 
@@ -53,9 +54,21 @@ const ratelEmfSource = {
 	url: "https://emf.ratel.rs/cyr/rezultati-merenja/",
 
 	fetch: () => {
-		return ratelEmf.getCampaigns().then(fetchCampaigns).then((campaigns) => {
-			const points = emf.replaceCampaigns(campaigns);
-			console.log("ratel-emf: " + campaigns.length + " campaigns, " + points + " measured points");
+		return ratelEmf.getCampaigns().then((campaigns) => {
+			const ids = campaigns.map((campaign) => {
+				return campaign.id;
+			}).sort();
+
+			// campaigns are finished measurements: only reload them when RATEL adds or removes one
+			if (JSON.stringify(ids) === JSON.stringify(emf.getCampaignIds())) {
+				console.log("ratel-emf: " + campaigns.length + " campaigns unchanged");
+				return null;
+			}
+
+			return fetchCampaigns(campaigns).then((loaded) => {
+				console.log("ratel-emf: " + loaded.length + " campaigns, " + emf.replaceCampaigns(loaded) + " measured points");
+			});
+		}).then(() => {
 			return ratelEmf.getStations();
 		}).then((stations) => {
 			return stations.map(toEmitter);

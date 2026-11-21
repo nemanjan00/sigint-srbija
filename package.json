@@ -15,6 +15,7 @@
     "express": "^5.3.0",
     "forever": "^4.0.3",
     "got-verbose": "^0.0.19",
+    "hpagent": "^1.2.0",
     "maplibre-gl": "^5",
     "node-cron": "^4.6.0",
     "queue-promised": "^0.0.31",
