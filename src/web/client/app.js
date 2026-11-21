@@ -2107,7 +2107,7 @@ const emfBlock = (detail) => {
 	fetchJson("/api/emf/stations/" + encodeURIComponent(detail.source_key) + "/series").then((payload) => {
 		status.series = payload.series;
 	}).catch(() => {
-		status.error = "Live values are unavailable: RATEL's EMF site refuses connections from our server (it is outside Serbia). The station's chart opens on RATEL from the link below.";
+		status.error = "RATEL's EMF site didn't answer in time. Try again in a minute, or open the station's chart on RATEL (link below).";
 	});
 
 	return el("div", { class: "grid gap-2" },
@@ -2129,7 +2129,7 @@ const emfBlock = (detail) => {
 					latest.exposure !== null ? el("span", { class: "ml-auto text-xs text-muted-foreground" }, (latest.exposure * 100).toFixed(2) + " % of the limit") : null),
 				emfSparkline(series));
 		}, () => {
-			return el("div", { class: "grid place-items-center py-6" }, el("div", { class: "spinner" }));
+			return el("div", { class: "flex items-center gap-3 py-4 text-xs text-muted-foreground" }, el("div", { class: "spinner" }), "Loading from RATEL, this can take 10-20 s…");
 		}),
 		el("span", { class: "text-[11px] text-muted-foreground" }, "Broadband 100 kHz - 7 GHz: every transmitter around adds up. 6-minute values, about an hour behind. ",
 			el("a", { class: "text-primary hover:underline", target: "_blank", rel: "noreferrer", href: "https://emf.ratel.rs/results/details/cyr/" + detail.source_key + "/gps:" + detail.lat.toFixed(8) + "," + detail.lon.toFixed(8) + "/params:1100111" }, "RATEL ↗")));

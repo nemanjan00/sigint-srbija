@@ -5,8 +5,8 @@ const storage = require("../storage");
 const ratelEmf = require("../services/ratel-emf");
 
 const SERIES_CACHE_MS = 10 * 60 * 1000;
-// RATEL unreachable (it refuses the production server): don't make every visitor wait again
-const FAILURE_CACHE_MS = 5 * 60 * 1000;
+// RATEL (or the proxy) did not answer: don't make the next visitors wait again right away
+const FAILURE_CACHE_MS = 60 * 1000;
 const SERIES_DAYS = 2;
 const COORD_DECIMALS = 5;
 

@@ -13,7 +13,8 @@ const STATIONS_PAGE = "cyr/rezultati-merenja/";
 const CAMPAIGNS_PAGE = "drive-campaign/results/-/cyr";
 // chart series shown: field level only (the page's params bit mask)
 const SERIES_PARAMS = "1000001";
-const SERIES_TIMEOUT_MS = 10000;
+// through the residential proxy a station page takes 4-10 s, sometimes more
+const SERIES_TIMEOUT_MS = 30000;
 // emf.ratel.rs refuses connections from outside Serbia: the production server
 // reaches it through a proxy in Serbia (URL with credentials, from the
 // environment only — never commit it). Used for this host only.
