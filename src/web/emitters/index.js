@@ -7,7 +7,7 @@ const access = require("../../access");
 const live = require("../../live");
 
 // Columns sent to the browser for every point, in this order
-const MAP_COLUMNS = ["id", "lat", "lon", "source", "kind", "mode", "tx_hz", "tx_high_hz", "active", "callsign", "operator", "location", "station_type", "service_type", "sector", "owner", "coord_accuracy_m", "duplicate_of"];
+const MAP_COLUMNS = ["id", "lat", "lon", "source", "kind", "mode", "tx_hz", "tx_high_hz", "active", "callsign", "operator", "location", "station_type", "service_type", "sector", "owner", "coord_accuracy_m", "duplicate_of", "name"];
 
 let cache = null;
 
@@ -85,7 +85,9 @@ const getMapData = () => {
 	const rows = db.prepare(`SELECT id, lat, lon, source, kind, mode, tx_hz, tx_high_hz, active, callsign, operator, location,
 			CASE WHEN source = 'ratel-reg203' THEN substr(raw->>'vrsta', 1, instr(raw->>'vrsta' || '/', '/') - 1) END AS station_type,
 			CASE WHEN source = 'ratel-reg203' AND instr(raw->>'vrsta', '/') > 0 THEN substr(raw->>'vrsta', instr(raw->>'vrsta', '/') + 1) END AS service_type,
-			sector, owner, coord_accuracy_m, duplicate_of
+			sector, owner, coord_accuracy_m, duplicate_of,
+			-- names only where pins are labelled by them (mesh nodes, gateways): keeps the payload small
+			CASE WHEN kind IN ('mesh', 'lorawan') THEN name END AS name
 		FROM emitters WHERE lat IS NOT NULL`).all().map((row) => {
 		return MAP_COLUMNS.map((column) => {
 			return row[column];

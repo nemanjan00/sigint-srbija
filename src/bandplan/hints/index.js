@@ -57,7 +57,7 @@ const STATION_TYPES = {
 	NL: { hear: "Maritime navigation beacon", prefer: ["navigation"] },
 	SM: { hear: "Meteorological aids station", prefer: ["radiosonde"] }
 };
-const OWN_BANDWIDTH_KINDS = ["broadcast", "cell", "link", "mesh", "cb"];
+const OWN_BANDWIDTH_KINDS = ["broadcast", "cell", "link", "mesh", "cb", "lorawan"];
 // Band plan hints shown for a licence (the full list of uses is shown anyway)
 const MAX_PLAN_HINTS = 2;
 
@@ -80,6 +80,10 @@ const fromEmitter = (emitter) => {
 
 	if (emitter.kind === "mesh") {
 		return { hear: "Meshtastic LoRa mesh node: short chirp bursts (text, positions, telemetry) on 869.525 MHz — decode with any Meshtastic radio, or see them on jugomesh.com", bandwidthHz: 250000, technology: "LoRa" };
+	}
+
+	if (emitter.kind === "lorawan") {
+		return { hear: "LoRaWAN gateway (The Things Network, EU868): receives sensor uplinks on 867.1-868.5 MHz and answers with short downlinks (RX2 869.525 MHz) — LoRa chirps, readable with an SDR + gr-lora or any LoRa radio", bandwidthHz: 125000, technology: "LoRaWAN" };
 	}
 
 	if (emitter.kind === "cell") {

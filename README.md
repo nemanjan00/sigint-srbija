@@ -18,6 +18,7 @@ FM and TV transmitters, mobile network base stations, registered Wi-Fi links and
 | [RATEL reg215](https://registar.ratel.rs/cyr/reg215) | registered licence-exempt stations: 2.4 / 5 / 60 GHz RLAN (Wi-Fi) stations and E-band links, with the applicant | exact |
 | [RATEL reg215 CB](https://registar.ratel.rs/cyr/reg215) | registered CB (27 MHz) radio stations: address, radio, power, emission | geocoded from the registered address (OpenStreetMap), else the place |
 | [Jugomesh](https://jugomesh.com/map) | Meshtastic LoRa mesh routers and repeaters (869.525 MHz); personal client nodes are left out | exact |
+| [The Things Network](https://www.thethingsnetwork.org/map) | LoRaWAN gateways (EU868) from the public gateway map, via [Packet Broker](https://mapper.packetbroker.net); offline = not valid | exact |
 | [RATEL documents](https://www.ratel.rs/sr/rf-spektar) | spectrum plans and regulations (PDF/DOC), mirrored to `lib/` | — |
 
 The same station listed by several sources is merged into one pin; its details
@@ -52,7 +53,7 @@ PORT=3300 yarn web      # map on http://localhost:3300
 
 | command | does |
 |---|---|
-| `yarn fetch [source ...]` | fetch all (or the named) sources, then merge duplicates and resolve positions. Sources: `yu1srs-repeaters`, `yu1srs-map`, `brandmeister`, `ratel-reg203`, `ratel-reg204`, `ratel-reg221`, `ratel-reg215`, `ratel-reg215-cb`, `jugomesh` |
+| `yarn fetch [source ...]` | fetch all (or the named) sources, then merge duplicates and resolve positions. Sources: `yu1srs-repeaters`, `yu1srs-map`, `brandmeister`, `ratel-reg203`, `ratel-reg204`, `ratel-reg221`, `ratel-reg215`, `ratel-reg215-cb`, `jugomesh`, `ttn` |
 | `yarn reg203-enrich` | add holder name/address, inspection and start-of-use dates, full station description to licences |
 | `yarn gazetteer` | geocode site names that still have no position (OpenStreetMap Nominatim, 1 req/s) into `data/gazetteer.json` — review the result, wrong matches happen |
 | `yarn bandplan [pdf]` | parse RATEL's band plan table (PDF, needs `pdftotext`) into `data/bandplan.json` |

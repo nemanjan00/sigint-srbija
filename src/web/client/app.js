@@ -40,10 +40,11 @@ const KINDS = {
 	cell: { label: "Cell sites", color: "#34d399" },
 	link: { label: "Wi-Fi & links", color: "#94a3b8" },
 	mesh: { label: "Mesh (LoRa)", color: "#fb923c" },
-	cb: { label: "CB radio", color: "#facc15" }
+	cb: { label: "CB radio", color: "#facc15" },
+	lorawan: { label: "LoRaWAN gateways", color: "#e879f9" }
 };
-// Kinds of the amateur / community sources (SRS, BrandMeister, mesh); the rest are RATEL registers
-const AMATEUR_KINDS = ["repeater", "digipeater", "beacon", "mesh"];
+// Kinds of the amateur / community sources (SRS, BrandMeister, mesh, TTN); the rest are RATEL registers
+const AMATEUR_KINDS = ["repeater", "digipeater", "beacon", "mesh", "lorawan"];
 
 const SOURCES = {
 	"yu1srs-repeaters": { label: "SRS table", color: "#22d3ee" },
@@ -54,7 +55,8 @@ const SOURCES = {
 	"ratel-reg221": { label: "RATEL cell sites", color: "#34d399" },
 	"ratel-reg215": { label: "RATEL Wi-Fi & links", color: "#94a3b8" },
 	"ratel-reg215-cb": { label: "RATEL CB radio", color: "#facc15" },
-	"jugomesh": { label: "Jugomesh", color: "#fb923c" }
+	"jugomesh": { label: "Jugomesh", color: "#fb923c" },
+	"ttn": { label: "TTN gateways", color: "#e879f9" }
 };
 
 // Frequency presets (Hz). Emitters match when their TX range overlaps.
@@ -95,6 +97,19 @@ const data = {
 	links: []
 };
 
+// Pin label of community stations: callsign, or the name of mesh nodes and gateways (not bare "eui-…" IDs)
+const mapLabel = (row) => {
+	if (row.callsign) {
+		return row.callsign;
+	}
+
+	if ((row.kind === "mesh" || row.kind === "lorawan") && row.name && !/^eui-/i.test(row.name)) {
+		return row.name;
+	}
+
+	return "";
+};
+
 const loadData = () => {
 	return fetch("/api/map").then((response) => {
 		return response.json();
@@ -118,7 +133,7 @@ const loadData = () => {
 				type: "Feature",
 				id: row.id,
 				geometry: { type: "Point", coordinates: [row.lon, row.lat] },
-				properties: { id: row.id, kind: row.kind, label: AMATEUR_KINDS.includes(row.kind) ? (row.callsign || (row.kind === "mesh" ? row.name : "") || "") : "" }
+				properties: { id: row.id, kind: row.kind, label: AMATEUR_KINDS.includes(row.kind) ? mapLabel(row) : "" }
 			};
 		});
 		data.haystacks = data.rows.map((row) => {
@@ -1710,6 +1725,22 @@ const linkBlock = (detail) => {
 		el("span", { class: "text-[11px] text-muted-foreground" }, "Applicant, address, SSID and MAC are in the register but not collected here."));
 };
 
+const gatewayBlock = (detail) => {
+	const raw = detail.raw || {};
+
+	if (detail.kind !== "lorawan") {
+		return null;
+	}
+
+	return el("div", { class: "grid gap-1" },
+		SubHeading("LoRaWAN gateway"),
+		field("Status", raw.online ? "online now" : "offline", { mono: false }),
+		field("Last update", raw.updated_at ? raw.updated_at.slice(0, 16).replace("T", " ") + " UTC" : null, { mono: true }),
+		field("Antenna", [raw.antenna_placement ? raw.antenna_placement.toLowerCase() : null, raw.antenna_count > 1 ? raw.antenna_count + " antennas" : null, raw.altitude ? raw.altitude + " m altitude" : null].filter(Boolean).join(" · ")),
+		field("EUI", raw.eui, { mono: true }),
+		field("Network", raw.cluster, { mono: true }));
+};
+
 const licenceBlock = (detail) => {
 	const row = detail.detail;
 
@@ -1975,6 +2006,7 @@ const detailView = (detail) => {
 		spectrumBlock(detail),
 		cellBlock(detail),
 		linkBlock(detail),
+		gatewayBlock(detail),
 		licenceBlock(detail),
 		rawBlock(detail.raw));
 };
