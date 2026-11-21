@@ -1,10 +1,15 @@
 // BrandMeister Hoseline: live audio of one talkgroup, straight from
 // BrandMeister to the browser (the public token their own Hoseline page uses).
+// When that connection fails (blocking extensions, filtered networks) the
+// same protocol goes through this server's relay (/api/hose) instead.
 // Messages are MessagePack arrays [type, ...args]; audio is 8 kHz µ-law,
 // 960 bytes every 120 ms.
 import { encode, decode } from "@msgpack/msgpack";
 
-const URL = "wss://hose.brandmeister.network/spotter/?token=test:test";
+const DIRECT_URL = "wss://hose.brandmeister.network/spotter/?token=test:test";
+const RELAY_URL = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/api/hose";
+// a direct connection not open by then counts as failed
+const DIRECT_TIMEOUT_MS = 5000;
 const SAMPLE_RATE = 8000;
 // audio queued ahead of playback, absorbs network jitter
 const JITTER_S = 0.3;
@@ -39,6 +44,8 @@ export const createHosePlayer = (onState) => {
 	let audio = null;
 	let nextTime = 0;
 	let current = null;
+	// after one failed direct connection, use the relay for the rest of the visit
+	let useRelay = false;
 
 	const update = (changes) => {
 		current = changes === null ? null : Object.freeze(Object.assign({}, current, changes));
@@ -101,12 +108,33 @@ export const createHosePlayer = (onState) => {
 		audio.resume();
 		nextTime = 0;
 		update({ talkgroup: talkgroup, status: "connecting", caller: null, callerId: null, level: null });
+		connect(talkgroup, useRelay);
+	};
 
-		const socket = new WebSocket(URL, ["spotter"]);
+	const connect = (talkgroup, viaRelay) => {
+		const socket = new WebSocket(viaRelay ? RELAY_URL : DIRECT_URL, ["spotter"]);
+		let opened = false;
+
+		// direct connection blocked: try again through the relay
+		const fallBack = () => {
+			if (ws === socket && !opened && !viaRelay) {
+				useRelay = true;
+				socket.onclose = null;
+				socket.close();
+				connect(talkgroup, true);
+				return true;
+			}
+
+			return false;
+		};
+		const timer = setTimeout(fallBack, DIRECT_TIMEOUT_MS);
+
 		socket.binaryType = "arraybuffer";
 		socket.onopen = () => {
+			opened = true;
+			clearTimeout(timer);
 			socket.send(encode([TYPES.GROUP_JOIN, [talkgroup]]));
-			update({ status: "listening" });
+			update({ status: "listening", relayed: viaRelay });
 		};
 		socket.onmessage = (event) => {
 			const message = decode(new Uint8Array(event.data));
@@ -117,7 +145,9 @@ export const createHosePlayer = (onState) => {
 			}
 		};
 		socket.onclose = () => {
-			if (ws === socket) {
+			clearTimeout(timer);
+
+			if (ws === socket && !fallBack()) {
 				ws = null;
 				update({ status: "error", caller: null, level: null });
 			}

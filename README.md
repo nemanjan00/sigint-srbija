@@ -156,6 +156,7 @@ src/storage/        the SQLite database
 src/geo/            duplicate merging + position resolution
 src/access/         repeater access: CTCSS tone, DMR colour code / talkgroups from the source records
 src/live/           BrandMeister last heard for Serbian DMR repeaters (memory only)
+src/hose-relay/     Hoseline audio relay (/api/hose) for browsers that can't reach BrandMeister
 src/bandplan/       national band plan: PDF parser, English names, listening hints
 src/reg203/         RATEL register: parser, detail tables, sector guessing
 src/ratel-docs/     RATEL document mirror
