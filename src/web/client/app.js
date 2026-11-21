@@ -1295,9 +1295,60 @@ const frequencyBlock = (detail) => {
 	};
 	const shift = detail.tx_hz && detail.rx_hz && detail.tx_hz !== detail.rx_hz ? (detail.rx_hz - detail.tx_hz) / 1e6 : null;
 
+	const setting = (label, value) => {
+		return el("span", {}, label + " ", el("span", { class: "font-mono text-foreground" }, value));
+	};
+
 	return el("div", { class: "grid gap-2" },
 		el("div", { class: "grid grid-cols-2 gap-2" }, tile("TX", detail.tx_hz, detail.tx_high_hz), tile("RX", detail.rx_hz, detail.rx_high_hz)),
-		shift !== null ? el("div", { class: "text-xs text-muted-foreground" }, "Shift ", el("span", { class: "font-mono text-foreground" }, (shift > 0 ? "+" : "") + shift.toFixed(4).replace(/0+$/, "").replace(/\.$/, "") + " MHz")) : null);
+		shift !== null || detail.access ? el("div", { class: "flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground" },
+			shift !== null ? setting("Shift", (shift > 0 ? "+" : "") + shift.toFixed(4).replace(/0+$/, "").replace(/\.$/, "") + " MHz") : null,
+			...accessParts(detail.access).map((part) => {
+				return setting(part[0], part[1]);
+			})) : null);
+};
+
+const formatTone = (hz) => {
+	return hz.toFixed(1) + " Hz";
+};
+
+// "123.0 Hz", or "123.0 Hz in, 88.5 Hz out" when the repeater sends another tone
+const toneText = (access) => {
+	if (access.ctcss_hz === undefined && access.ctcss_out_hz === undefined) {
+		return null;
+	}
+
+	if (access.ctcss_out_hz === undefined) {
+		return formatTone(access.ctcss_hz);
+	}
+
+	if (access.ctcss_hz === undefined) {
+		return formatTone(access.ctcss_out_hz) + " out";
+	}
+
+	return formatTone(access.ctcss_hz) + " in, " + formatTone(access.ctcss_out_hz) + " out";
+};
+
+// [label, value] pairs of a repeater's access settings (CTCSS tone, DMR colour code, talkgroups)
+const accessParts = (access) => {
+	if (!access) {
+		return [];
+	}
+
+	return [
+		["PL", toneText(access)],
+		["CC", access.color_code],
+		["TS1", access.ts1_tg !== undefined ? "TG " + access.ts1_tg : null],
+		["TS2", access.ts2_tg !== undefined ? "TG " + access.ts2_tg : null]
+	].filter((part) => {
+		return part[1] !== null && part[1] !== undefined;
+	});
+};
+
+const accessText = (access) => {
+	return accessParts(access).map((part) => {
+		return part[0] + " " + part[1];
+	}).join(" · ");
 };
 
 // --- spectrum: band plan, listening hints, interactive explorer ------------
@@ -1618,6 +1669,9 @@ const listingsBlock = (detail) => {
 			const source = SOURCES[listing.source] || { label: listing.source, color: "#94a3b8" };
 			const txDiffers = differs(listing.tx_hz, detail.tx_hz);
 			const rxDiffers = differs(listing.rx_hz, detail.rx_hz);
+			const toneDiffers = Boolean(listing.access && detail.access) && ["ctcss_hz", "color_code"].some((field) => {
+				return listing.access[field] !== undefined && detail.access[field] !== undefined && listing.access[field] !== detail.access[field];
+			});
 
 			return el("button", {
 				class: "group grid w-full gap-1 rounded-lg border border-white/5 bg-black/20 px-3 py-2 text-left hover:border-white/15",
@@ -1633,8 +1687,10 @@ const listingsBlock = (detail) => {
 			el("div", { class: "flex flex-wrap gap-x-4 font-mono text-xs text-muted-foreground" },
 				el("span", { class: txDiffers ? "text-amber-400" : "" }, "TX " + formatMhz(listing.tx_hz)),
 				el("span", { class: rxDiffers ? "text-amber-400" : "" }, "RX " + formatMhz(listing.rx_hz)),
+				listing.access ? el("span", { class: toneDiffers ? "text-amber-400" : "" }, accessText(listing.access)) : null,
 				listing.callsign && listing.callsign !== detail.callsign ? el("span", {}, listing.callsign) : null),
-			txDiffers || rxDiffers ? el("span", { class: "text-[11px] text-amber-400/90" }, "Frequency differs from this listing — one of the sources has a typo") : null);
+			txDiffers || rxDiffers ? el("span", { class: "text-[11px] text-amber-400/90" }, "Frequency differs from this listing — one of the sources has a typo") : null,
+			toneDiffers ? el("span", { class: "text-[11px] text-amber-400/90" }, "Tone or colour code differs from this listing") : null);
 		}));
 };
 

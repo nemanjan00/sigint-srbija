@@ -4,6 +4,7 @@
 // `sources.fetched_at`.
 const storage = require("../storage");
 const fold = require("../utils/text").fold;
+const access = require("../access");
 
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 200;
@@ -11,9 +12,34 @@ const EARTH_RADIUS_KM = 6371;
 
 const COLUMNS = `id, source, source_key, kind, mode, callsign, dmr_id, name, operator, tx_hz, tx_high_hz, rx_hz, rx_high_hz,
 	city, location, locator, lat, lon, coord_source, coord_accuracy_m, active, sector, owner, duplicate_of,
-	CASE WHEN source = 'ratel-reg203' THEN raw->>'vrsta' END AS vrsta`;
+	CASE WHEN source = 'ratel-reg203' THEN raw->>'vrsta' END AS vrsta,
+	CASE WHEN source IN (${access.SOURCES.map((source) => "'" + source + "'").join(", ")}) THEN raw END AS access_raw`;
 
 let cache = null;
+
+// Tone / colour code of a row: its own, missing fields from the station's other listings
+const withStationAccess = (rows) => {
+	const own = new Map();
+	const byStation = new Map();
+
+	rows.filter((row) => {
+		return row.access_raw;
+	}).forEach((row) => {
+		const station = row.duplicate_of || row.id;
+		own.set(row.id, access.fromRaw(row.source, row.access_raw));
+		byStation.set(station, (byStation.get(station) || []).concat([row.id]));
+	});
+
+	return (row) => {
+		const others = (byStation.get(row.duplicate_of || row.id) || []).filter((id) => {
+			return id !== row.id;
+		});
+
+		return access.merge([own.get(row.id)].concat(others.map((id) => {
+			return own.get(id);
+		})));
+	};
+};
 
 const load = () => {
 	const db = storage.getDatabase();
@@ -23,10 +49,14 @@ const load = () => {
 		return cache.rows;
 	}
 
-	const rows = db.prepare("SELECT " + COLUMNS + " FROM emitters").all().map((row) => {
+	const loaded = db.prepare("SELECT " + COLUMNS + " FROM emitters").all();
+	const stationAccess = withStationAccess(loaded);
+	const rows = loaded.map((row) => {
 		const vrsta = (row.vrsta || "").split("/");
 
 		return Object.freeze(Object.assign(row, {
+			access_raw: undefined,
+			access: stationAccess(row),
 			station_type: vrsta[0] || null,
 			service_type: vrsta.slice(1).join("/") || null,
 			haystack: fold([row.callsign, row.dmr_id, row.name, row.operator, row.location, row.city].filter(Boolean).join(" "))

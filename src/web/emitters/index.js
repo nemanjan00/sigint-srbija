@@ -3,6 +3,7 @@ const storage = require("../../storage");
 const sector = require("../../reg203/sector");
 const spectrum = require("../spectrum");
 const ratelRegistry = require("../../services/ratel-registry");
+const access = require("../../access");
 
 // Columns sent to the browser for every point, in this order
 const MAP_COLUMNS = ["id", "lat", "lon", "source", "kind", "mode", "tx_hz", "tx_high_hz", "active", "callsign", "operator", "location", "station_type", "service_type", "sector", "owner", "coord_accuracy_m", "duplicate_of"];
@@ -115,8 +116,14 @@ const getEmitter = (id) => {
 	const canonical = emitter.duplicate_of || emitter.id;
 
 	// every listing of the same station (canonical first), except this one
-	result.listings = db.prepare(`SELECT id, source, source_key, callsign, name, tx_hz, rx_hz, location, lat, lon, coord_source, duplicate_of
-		FROM emitters WHERE (id = ? OR duplicate_of = ?) AND id != ? ORDER BY duplicate_of IS NOT NULL, id`).all(canonical, canonical, emitter.id);
+	result.listings = db.prepare(`SELECT id, source, source_key, callsign, name, tx_hz, rx_hz, location, lat, lon, coord_source, duplicate_of, raw
+		FROM emitters WHERE (id = ? OR duplicate_of = ?) AND id != ? ORDER BY duplicate_of IS NOT NULL, id`).all(canonical, canonical, emitter.id).map((listing) => {
+		return Object.assign({}, listing, { raw: undefined, access: access.fromRaw(listing.source, listing.raw) });
+	});
+	// tone / colour code: this listing's own, missing fields from the others
+	result.access = access.merge([access.fromRaw(emitter.source, result.raw)].concat(result.listings.map((listing) => {
+		return listing.access;
+	})));
 
 	if (emitter.source === "ratel-reg203" && result.raw && result.raw.id) {
 		result.detail = db.prepare(`SELECT a.*, st.name AS vrsta_stanice_naziv, sv.name AS vrsta_sluzbe_naziv

@@ -101,7 +101,7 @@ API used by the page:
 | endpoint | returns |
 |---|---|
 | `GET /api/map` | every emitter with a position, as compact rows |
-| `GET /api/emitters/:id` | one emitter, its other listings, and for licences the full register row and the licence's other assignments |
+| `GET /api/emitters/:id` | one emitter, its other listings, repeater access (`access`: CTCSS tone, DMR colour code and talkgroups), and for licences the full register row and the licence's other assignments |
 | `GET /api/emitter?source=&key=` | the same, by stable key |
 | `POST /mcp` | MCP server (see above) |
 
@@ -153,6 +153,7 @@ bin/                entry points (fetch, reg203-enrich, gazetteer, ratel-docs)
 src/sources/        one module per source -> emitters
 src/storage/        the SQLite database
 src/geo/            duplicate merging + position resolution
+src/access/          repeater access: CTCSS tone, DMR colour code / talkgroups from the source records
 src/bandplan/       national band plan: PDF parser, English names, listening hints
 src/reg203/         RATEL register: parser, detail tables, sector guessing
 src/ratel-docs/     RATEL document mirror
