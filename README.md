@@ -20,6 +20,8 @@ FM and TV transmitters, mobile network base stations, registered Wi-Fi links and
 | [Jugomesh](https://jugomesh.com/map) | Meshtastic LoRa mesh routers and repeaters (869.525 MHz); personal client nodes are left out | exact |
 | [OurAirports](https://ourairports.com/countries/RS/) | aviation radio: VOR / DME / NDB navaids and airport tower, approach and ATIS frequencies | exact |
 | [RATEL EMF](https://emf.ratel.rs) | 118 electric field monitoring stations (live value + 2-day chart in details) and the drive-test measurements of 13 towns (map layer) | exact |
+| [APRS-IS](https://www.aprs-is.net) | live map layer of APRS stations heard around Serbia (memory only) and "last heard" for listed digipeaters | exact |
+| [adsb.lol](https://adsb.lol) | live aircraft layer (ADS-B / MLAT), fetched by the server every 10 s while someone watches | exact |
 | [The Things Network](https://www.thethingsnetwork.org/map) | LoRaWAN gateways (EU868) from the public gateway map, via [Packet Broker](https://mapper.packetbroker.net); offline = not valid | exact |
 | [RATEL documents](https://www.ratel.rs/sr/rf-spektar) | spectrum plans and regulations (PDF/DOC), mirrored to `lib/` | — |
 

@@ -7,6 +7,8 @@ const mcp = require("../mcp");
 const bandplan = require("../bandplan");
 const live = require("../live");
 const emf = require("../emf");
+const aprs = require("../aprs");
+const aircraft = require("../aircraft");
 
 // Built page (yarn build: src/web/client -> src/web/dist)
 const PUBLIC_DIR = path.join(__dirname, "dist");
@@ -88,6 +90,20 @@ app.get("/api/emitters/:id", (req, res) => {
 	}
 
 	res.json(emitter);
+});
+
+// Live layers, the same copy for everyone: APRS stations heard (APRS-IS, memory)
+// and aircraft (adsb.lol, fetched at most every 10 s while someone is looking)
+app.get("/api/aprs", (_req, res) => {
+	res.set("cache-control", "no-cache");
+	res.json(aprs.getSnapshot());
+});
+
+app.get("/api/aircraft", (_req, res) => {
+	res.set("cache-control", "no-cache");
+	aircraft.getSnapshot().then((snapshot) => {
+		res.json(snapshot);
+	});
 });
 
 // RATEL EMF drive-campaign points for the heatmap (loaded when the layer is turned on)

@@ -908,6 +908,11 @@ anymatch@~3.1.2:
     normalize-path "^3.0.0"
     picomatch "^2.0.4"
 
+aprs-parser@^1.0.9:
+  version "1.0.9"
+  resolved "https://registry.yarnpkg.com/aprs-parser/-/aprs-parser-1.0.9.tgz#70d2ff722d756beb223b535c01cc34a071627aca"
+  integrity sha512-3rU32k9XH4Lz/eLDzLH9U+Y19r7H2IGkC6NE9YJRoBx38hqeF0o7nhu3IGgItK9T1IT3WfGM9w8vLq9aQKc7rw==
+
 argparse@^2.0.1:
   version "2.0.1"
   resolved "https://registry.yarnpkg.com/argparse/-/argparse-2.0.1.tgz#246f50f3ca78a3240f6c997e8a9bd1eac49e4b38"

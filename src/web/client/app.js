@@ -27,6 +27,11 @@ const LIST_CLUSTER_SIZE = 6;
 const MAX_LIST = 500;
 // RATEL's colour scale for electric field (V/m), upper bounds; the drive-campaign layer uses it
 const EMF_SCALE = [[0.1, "#4169e1"], [0.5, "#40e0d0"], [1, "#32cd32"], [2, "#adff2f"], [6, "#ffd700"], [11, "#ffa500"], [18, "#ff4500"], [Infinity, "#ff0000"]];
+// live layers: refresh rates (the server shares one copy with everyone)
+const APRS_REFRESH_MS = 30 * 1000;
+const AIRCRAFT_REFRESH_MS = 10 * 1000;
+const APRS_COLORS = { digi: "#a78bfa", igate: "#f472b6", weather: "#38bdf8", object: "#94a3b8", station: "#fbbf24" };
+const APRS_LABELS = { digi: "digipeater", igate: "iGate", weather: "weather station", object: "object", station: "station" };
 // on-air rings pulse at this rate
 const PULSE_MS = 80;
 const PULSE_PERIOD_MS = 1600;
@@ -191,7 +196,12 @@ const s = state({
 	// ticks every second while a call is on air (call timers)
 	clock: Date.now(),
 	// RATEL EMF drive-campaign heatmap layer
-	emfHeatmap: false
+	emfHeatmap: false,
+	// live layers: APRS stations heard (APRS-IS) and aircraft (adsb.lol)
+	aprsLayer: false,
+	aircraftLayer: false,
+	aprsCount: 0,
+	aircraftCount: 0
 });
 
 const frequencyRange = () => {
@@ -656,6 +666,217 @@ const emfLegend = () => {
 		el("span", {}, "Broadband (100 kHz - 7 GHz), the sum of every transmitter nearby, measured once from a car. Click a dot for its value."));
 };
 
+// --- live layers: APRS (APRS-IS) and aircraft (adsb.lol) --------------------
+
+const rowsToFeatures = (payload, toProperties) => {
+	const index = payload.columns.reduce((result, column, position) => {
+		result[column] = position;
+		return result;
+	}, {});
+
+	return payload.rows.map((row) => {
+		const record = payload.columns.reduce((result, column) => {
+			result[column] = row[index[column]];
+			return result;
+		}, {});
+
+		return { type: "Feature", geometry: { type: "Point", coordinates: [record.lon, record.lat] }, properties: toProperties(record) };
+	});
+};
+
+const escapeHtml = (text) => {
+	return String(text === null || text === undefined ? "" : text).replace(/[&<>"]/g, (char) => {
+		return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[char];
+	});
+};
+
+const popup = (lngLat, html) => {
+	new maplibregl.Popup({ closeButton: false, maxWidth: "280px" }).setLngLat(lngLat).setHTML(html).addTo(map);
+};
+
+/**
+ * A map layer fed by polling a live endpoint while it is switched on
+ * @param {Object} options
+ * @param {string} options.id - source id
+ * @param {string} options.url
+ * @param {number} options.every - ms between refreshes
+ * @param {function(Object): Object[]} options.toFeatures - payload -> GeoJSON features
+ * @param {function(): void} options.addLayers - adds the layers on source options.id
+ * @param {string[]} options.layers - layer ids (visibility)
+ * @param {function(number): void} options.onCount
+ */
+const liveLayer = (options) => {
+	let timer = null;
+
+	const load = () => {
+		if (document.hidden) {
+			return;
+		}
+
+		fetchJson(options.url).then((payload) => {
+			const features = options.toFeatures(payload);
+
+			if (!map.getSource(options.id)) {
+				map.addSource(options.id, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+				options.addLayers();
+			}
+
+			map.getSource(options.id).setData({ type: "FeatureCollection", features: features });
+			options.onCount(features.length);
+		}).catch(() => {});
+	};
+
+	return (visible) => {
+		clearInterval(timer);
+		options.layers.filter((layer) => {
+			return map.getLayer(layer);
+		}).forEach((layer) => {
+			map.setLayoutProperty(layer, "visibility", visible ? "visible" : "none");
+		});
+
+		if (visible) {
+			load();
+			timer = setInterval(load, options.every);
+		}
+	};
+};
+
+const setAprsLayer = liveLayer({
+	id: "aprs",
+	url: "/api/aprs",
+	every: APRS_REFRESH_MS,
+	layers: ["aprs-points", "aprs-labels"],
+	onCount: (count) => {
+		s.aprsCount = count;
+	},
+	toFeatures: (payload) => {
+		return rowsToFeatures(payload, (station) => {
+			return station;
+		});
+	},
+	addLayers: () => {
+		map.addLayer({
+			id: "aprs-points",
+			type: "circle",
+			source: "aprs",
+			paint: {
+				"circle-color": ["match", ["get", "category"]].concat(Object.keys(APRS_COLORS).flatMap((category) => {
+					return [category, APRS_COLORS[category]];
+				}), ["#fbbf24"]),
+				"circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 3, 14, 6],
+				"circle-stroke-color": "#0b1220",
+				"circle-stroke-width": 1.5
+			}
+		});
+		map.addLayer({
+			id: "aprs-labels",
+			type: "symbol",
+			source: "aprs",
+			minzoom: 8,
+			layout: {
+				"text-field": ["get", "callsign"],
+				"text-font": ["Montserrat SemiBold", "Open Sans Bold", "Noto Sans Regular"],
+				"text-size": 10,
+				"text-offset": [0, 1],
+				"text-anchor": "top",
+				"text-optional": true
+			},
+			paint: { "text-color": "#fcd34d", "text-halo-color": "#05080f", "text-halo-width": 1.2 }
+		});
+		map.on("click", "aprs-points", (event) => {
+			const station = event.features[0].properties;
+
+			popup(event.lngLat, "<b>" + escapeHtml(station.callsign) + "</b> · " + APRS_LABELS[station.category] +
+				(station.object_of !== "null" && station.object_of ? " (by " + escapeHtml(station.object_of) + ")" : "") +
+				"<br>" + formatAgo(Number(station.time), Date.now()) +
+				(station.comment && station.comment !== "null" ? "<br><span style=\"opacity:.8\">" + escapeHtml(station.comment) + "</span>" : "") +
+				"<br><span style=\"opacity:.6;font-family:monospace;font-size:10px\">" + escapeHtml(station.path) + "</span>" +
+				"<br><a href=\"https://aprs.fi/#!call=a%2F" + encodeURIComponent(station.callsign) + "\" target=\"_blank\" rel=\"noreferrer\">aprs.fi ↗</a>");
+		});
+	}
+});
+
+// Plane icon: an arrow pointing up (north), rotated by track
+const addPlaneIcon = () => {
+	const size = 32;
+	const canvas = document.createElement("canvas");
+	const context = canvas.getContext("2d");
+
+	canvas.width = size;
+	canvas.height = size;
+	context.fillStyle = "#f8fafc";
+	context.strokeStyle = "#0b1220";
+	context.lineWidth = 2;
+	context.beginPath();
+	context.moveTo(16, 2);
+	context.lineTo(27, 28);
+	context.lineTo(16, 22);
+	context.lineTo(5, 28);
+	context.closePath();
+	context.stroke();
+	context.fill();
+	map.addImage("plane", { width: size, height: size, data: context.getImageData(0, 0, size, size).data });
+};
+
+const setAircraftLayer = liveLayer({
+	id: "aircraft",
+	url: "/api/aircraft",
+	every: AIRCRAFT_REFRESH_MS,
+	layers: ["aircraft-icons"],
+	onCount: (count) => {
+		s.aircraftCount = count;
+	},
+	toFeatures: (payload) => {
+		return rowsToFeatures(payload, (plane) => {
+			const label = [plane.flight || plane.registration || plane.hex, plane.on_ground ? "GND" : (plane.altitude_ft ? "FL" + String(Math.round(plane.altitude_ft / 100)).padStart(3, "0") : "")].filter(Boolean).join(" ");
+			return Object.assign({}, plane, { label: label, track: plane.track || 0 });
+		});
+	},
+	addLayers: () => {
+		addPlaneIcon();
+		map.addLayer({
+			id: "aircraft-icons",
+			type: "symbol",
+			source: "aircraft",
+			layout: {
+				"icon-image": "plane",
+				"icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.45, 12, 0.7],
+				"icon-rotate": ["get", "track"],
+				"icon-rotation-alignment": "map",
+				"icon-allow-overlap": true,
+				"text-field": ["step", ["zoom"], "", 7, ["get", "label"]],
+				"text-font": ["Montserrat SemiBold", "Open Sans Bold", "Noto Sans Regular"],
+				"text-size": 10,
+				"text-offset": [0, 1.4],
+				"text-anchor": "top",
+				"text-optional": true
+			},
+			paint: { "text-color": "#e2e8f0", "text-halo-color": "#05080f", "text-halo-width": 1.2 }
+		});
+		map.on("click", "aircraft-icons", (event) => {
+			const plane = event.features[0].properties;
+			const value = (text) => {
+				return text && text !== "null" ? escapeHtml(text) : "?";
+			};
+
+			popup(event.lngLat, "<b>" + value(plane.flight) + "</b> · " + value(plane.registration) + " · " + value(plane.type) +
+				"<br>" + (plane.on_ground === true || plane.on_ground === "true" ? "on the ground" : value(plane.altitude_ft) + " ft · " + value(plane.speed_kt) + " kt · " + value(plane.track) + "°") +
+				"<br>squawk " + value(plane.squawk) + " · ICAO " + value(plane.hex) +
+				"<br><a href=\"https://adsb.lol/?icao=" + encodeURIComponent(plane.hex) + "\" target=\"_blank\" rel=\"noreferrer\">adsb.lol ↗</a>");
+		});
+	}
+});
+
+const aprsLegend = () => {
+	return el("div", { class: "-mt-2 grid gap-1.5 text-[11px] text-muted-foreground" },
+		el("div", { class: "flex flex-wrap gap-x-2.5 gap-y-1" }, ...Object.keys(APRS_COLORS).map((category) => {
+			return el("span", { class: "flex items-center gap-1" }, el("span", { class: "size-2 rounded-full", style: "background:" + APRS_COLORS[category] }), APRS_LABELS[category]);
+		})),
+		el("span", {}, () => {
+			return s.aprsCount + " stations heard since the server started (positions within ~30 km of Serbia).";
+		}));
+};
+
 // --- live: BrandMeister on-air state and Hoseline ---------------------------
 
 let pulseTimer = null;
@@ -874,6 +1095,14 @@ const filterParams = () => {
 		params.set("emf", "1");
 	}
 
+	if (s.aprsLayer) {
+		params.set("aprs", "1");
+	}
+
+	if (s.aircraftLayer) {
+		params.set("air", "1");
+	}
+
 	if (s.explorerOpen && explorerView) {
 		params.set("spectrum", explorerView);
 	}
@@ -913,6 +1142,8 @@ const applyFilterQuery = (search) => {
 	s.preciseOnly = params.has("precise") ? params.get("precise") === "1" : DEFAULT_FILTER.preciseOnly;
 	s.showDuplicates = params.get("dups") === "1";
 	s.emfHeatmap = params.get("emf") === "1";
+	s.aprsLayer = params.get("aprs") === "1";
+	s.aircraftLayer = params.get("air") === "1";
 	explorerView = /^[\d.]+,[\d.]+$/.test(params.get("spectrum") || "") ? params.get("spectrum") : "";
 	s.explorerOpen = explorerView !== "";
 
@@ -1410,7 +1641,15 @@ const filterPanel = () => {
 			switchRow("precise-only", "Precise positions only", "Hide city-level / grid-square guesses", [s, "preciseOnly"]),
 			switchRow("show-duplicates", "Show every listing", "One pin per source instead of one per station", [s, "showDuplicates"]),
 			switchRow("emf-heatmap", "EMF drive tests", "RATEL's measured electric field along driven routes in 13 towns (2024-2025)", [s, "emfHeatmap"]),
-			when(() => s.emfHeatmap, emfLegend)),
+			when(() => s.emfHeatmap, emfLegend),
+			switchRow("aprs-layer", "APRS live", "Stations heard on APRS-IS in the last 6 hours, as on aprs.fi", [s, "aprsLayer"]),
+			when(() => s.aprsLayer, aprsLegend),
+			switchRow("aircraft-layer", "Aircraft live", "ADS-B / MLAT positions from adsb.lol, every 10 s", [s, "aircraftLayer"]),
+			when(() => s.aircraftLayer, () => {
+				return el("span", { class: "-mt-2 text-xs text-muted-foreground" }, () => {
+					return s.aircraftCount + " aircraft in view of the feed";
+				});
+			})),
 		Separator({ class: "bg-white/5" }),
 		section("Data",
 			el("div", { class: "grid gap-1.5 text-xs" },
@@ -1861,7 +2100,7 @@ const emfBlock = (detail) => {
 	fetchJson("/api/emf/stations/" + encodeURIComponent(detail.source_key) + "/series").then((payload) => {
 		status.series = payload.series;
 	}).catch(() => {
-		status.error = "RATEL's measurement page did not answer.";
+		status.error = "RATEL's EMF site did not answer our server (it may refuse connections from outside Serbia). Open it on RATEL below.";
 	});
 
 	return el("div", { class: "grid gap-2" },
@@ -2117,6 +2356,28 @@ const dmrBlock = (detail) => {
 		el("span", { class: "text-[11px] text-muted-foreground" }, "BrandMeister reports calls on Serbian repeaters when they end. Talkgroup audio is network-wide (every repeater on that talkgroup), not just this one."));
 };
 
+// APRS-IS activity of this callsign (digipeaters, iGates)
+const aprsBlock = (detail) => {
+	const heard = detail.aprs;
+
+	if (!heard || !["digipeater", "beacon", "repeater"].includes(detail.kind)) {
+		return null;
+	}
+
+	const counts = [
+		heard.packets ? heard.packets + " own packet" + (heard.packets === 1 ? "" : "s") : null,
+		heard.digipeated ? "digipeated " + heard.digipeated : null,
+		heard.gated ? "gated " + heard.gated + " to the internet" : null
+	].filter(Boolean).join(" · ");
+
+	return el("div", { class: "grid gap-1" },
+		SubHeading("APRS live"),
+		el("div", { class: "text-sm" }, "Last heard ", el("span", { class: "font-mono" }, formatAgo(heard.last, Date.now()))),
+		el("span", { class: "text-xs text-muted-foreground" }, counts + " since " + new Date(heard.since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })),
+		heard.comment ? el("span", { class: "text-xs text-muted-foreground" }, heard.comment) : null,
+		el("a", { class: "text-[11px] text-primary hover:underline", target: "_blank", rel: "noreferrer", href: "https://aprs.fi/#!call=a%2F" + encodeURIComponent(heard.callsign) }, "aprs.fi ↗"));
+};
+
 const sectorLabel = (id) => {
 	const sector = data.lookups.sectors.find((candidate) => {
 		return candidate.id === id;
@@ -2165,6 +2426,7 @@ const detailView = (detail) => {
 					} }, "Panorama from here"))) : null,
 			field("Position from", coordinateSourceLabel(detail) + (detail.coord_accuracy_m ? " · ±" + formatNumber(detail.coord_accuracy_m) + " m" : ""))),
 		dmrBlock(detail),
+		aprsBlock(detail),
 		listingsBlock(detail),
 		linksBlock(detail),
 		spectrumBlock(detail),
@@ -2722,6 +2984,18 @@ Promise.all([loadData(), mapReady]).then(() => {
 	onChange(() => {
 		return s.live;
 	}, setOnAir);
+	onChange(() => {
+		return s.aprsLayer;
+	}, (visible) => {
+		setAprsLayer(visible);
+		replaceUrl();
+	}, { immediate: true });
+	onChange(() => {
+		return s.aircraftLayer;
+	}, (visible) => {
+		setAircraftLayer(visible);
+		replaceUrl();
+	}, { immediate: true });
 	onChange(() => {
 		return s.emfHeatmap;
 	}, (visible) => {

@@ -1,5 +1,6 @@
 const web = require("./web");
 const live = require("./live");
+const aprs = require("./aprs");
 const hoseRelay = require("./hose-relay");
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -12,9 +13,10 @@ const server = web.listen(PORT, (error) => {
 
 	console.log("sigint-srbija map on http://localhost:" + PORT);
 
-	// BrandMeister last heard (SIGINT_LIVE=0 turns it off)
+	// BrandMeister last heard and APRS-IS (SIGINT_LIVE=0 turns them off)
 	if (process.env.SIGINT_LIVE !== "0") {
 		live.start();
+		aprs.start();
 	}
 });
 
