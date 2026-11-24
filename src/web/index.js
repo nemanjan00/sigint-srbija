@@ -1,5 +1,6 @@
 // Map UI + JSON API over the global database
 const path = require("path");
+const zlib = require("zlib");
 const express = require("express");
 const compression = require("compression");
 const emitters = require("./emitters");
@@ -45,6 +46,22 @@ app.get("/api/live", (req, res) => {
 	});
 });
 
+// Every emitter with coordinates, served as the cached gzip bytes (see emitters.getMapPayload).
+// Before compression(), which would compress it again.
+app.get("/api/map", (req, res) => {
+	const payload = emitters.getMapPayload();
+
+	res.set({ "content-type": "application/json; charset=utf-8", "cache-control": "no-cache", "vary": "accept-encoding" });
+
+	if (req.acceptsEncodings("gzip")) {
+		res.set("content-encoding", "gzip");
+		res.send(payload.gzip);
+		return;
+	}
+
+	res.send(zlib.gunzipSync(payload.gzip));
+});
+
 app.use(compression());
 
 // Container healthcheck: the database opens and answers
@@ -58,16 +75,11 @@ app.post("/mcp", express.json({ limit: "1mb" }), mcp.handle);
 app.get("/mcp", mcp.methodNotAllowed);
 app.delete("/mcp", mcp.methodNotAllowed);
 
-// Every emitter with coordinates, compact (see emitters.getMapData)
 app.get("/api/bandplan", (_req, res) => {
 	res.set("cache-control", "public, max-age=3600");
 	res.json(bandplan.getPlan());
 });
 
-app.get("/api/map", (_req, res) => {
-	res.set("cache-control", "no-cache");
-	res.json(emitters.getMapData());
-});
 
 // Stable lookup for shared links: /api/emitter?source=brandmeister&key=220001
 app.get("/api/emitter", (req, res) => {

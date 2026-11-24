@@ -1,4 +1,5 @@
 // Read side of the database for the map UI
+const zlib = require("zlib");
 const storage = require("../../storage");
 const sector = require("../../reg203/sector");
 const spectrum = require("../spectrum");
@@ -70,17 +71,33 @@ const loadLookups = (db) => {
 	};
 };
 
-/**
- * All emitters with coordinates as { columns, rows, lookups, sources }.
- * Rows are arrays (much smaller than objects for ~75k points). Cached until
- * the sources table changes (i.e. after a fetch).
- */
-const getMapData = () => {
+const sourcesVersion = (db) => {
+	return JSON.stringify(db.prepare("SELECT id, fetched_at FROM sources ORDER BY id").all());
+};
+
+// Sources and code tables (small; MCP database_info)
+const getMapMeta = () => {
 	const db = storage.getDatabase();
-	const version = JSON.stringify(db.prepare("SELECT id, fetched_at FROM sources ORDER BY id").all());
+
+	return {
+		lookups: loadLookups(db),
+		sources: db.prepare("SELECT * FROM sources ORDER BY id").all()
+	};
+};
+
+/**
+ * All emitters with coordinates as { columns, rows, lookups, links, sources }, rows as arrays,
+ * already serialized and gzipped (~4 MB for ~180k rows). Built row by row from an SQLite
+ * iterator and cached as bytes until the sources table changes: holding the rows as objects
+ * (or serializing them per request) cost several hundred MB on a host with little memory.
+ * @returns {{ version: string, gzip: Buffer }}
+ */
+const getMapPayload = () => {
+	const db = storage.getDatabase();
+	const version = sourcesVersion(db);
 
 	if (cache && cache.version === version) {
-		return cache.data;
+		return cache;
 	}
 
 	const rows = db.prepare(`SELECT id, lat, lon, source, kind, mode, tx_hz, tx_high_hz, active, callsign, operator, location,
@@ -89,22 +106,17 @@ const getMapData = () => {
 			sector, owner, coord_accuracy_m, duplicate_of,
 			-- names only where pins are labelled by them (mesh nodes, gateways): keeps the payload small
 			CASE WHEN kind IN ('mesh', 'lorawan') THEN name END AS name
-		FROM emitters WHERE lat IS NOT NULL`).all().map((row) => {
-		return MAP_COLUMNS.map((column) => {
+		FROM emitters WHERE lat IS NOT NULL`).iterate().map((row) => {
+		return JSON.stringify(MAP_COLUMNS.map((column) => {
 			return row[column];
-		});
-	});
+		}));
+	}).toArray();
+	const meta = getMapMeta();
+	const json = "{\"columns\":" + JSON.stringify(MAP_COLUMNS) + ",\"rows\":[" + rows.join(",") + "]" +
+		",\"lookups\":" + JSON.stringify(meta.lookups) + ",\"links\":" + JSON.stringify(loadLinks(db)) + ",\"sources\":" + JSON.stringify(meta.sources) + "}";
 
-	const data = {
-		columns: MAP_COLUMNS,
-		rows: rows,
-		lookups: loadLookups(db),
-		links: loadLinks(db),
-		sources: db.prepare("SELECT * FROM sources ORDER BY id").all()
-	};
-
-	cache = { version: version, data: data };
-	return data;
+	cache = { version: version, gzip: zlib.gzipSync(json) };
+	return cache;
 };
 
 // Full emitter, plus the reg203 detail row for licences
@@ -168,7 +180,8 @@ const ping = () => {
 
 module.exports = {
 	ping: ping,
-	getMapData: getMapData,
+	getMapPayload: getMapPayload,
+	getMapMeta: getMapMeta,
 	getEmitter: getEmitter,
 	getEmitterByKey: getEmitterByKey
 };

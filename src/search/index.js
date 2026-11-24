@@ -2,6 +2,11 @@
 // by the MCP server. Text matching folds Cyrillic -> Latin and drops
 // diacritics, which SQLite LIKE cannot do. Reloaded when a fetch changes
 // `sources.fetched_at`.
+//
+// Memory: the index keeps only what filters need (plus the folded text) and is
+// read from an SQLite iterator; returned rows are read in full by id. With
+// ~260k emitters full row objects cost ~500 MB, too much for the server. The
+// index is dropped after IDLE_MS without searches (MCP use is occasional).
 const storage = require("../storage");
 const fold = require("../utils/text").fold;
 const access = require("../access");
@@ -9,62 +14,98 @@ const access = require("../access");
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 200;
 const EARTH_RADIUS_KM = 6371;
+const IDLE_MS = 15 * 60 * 1000;
 
-const COLUMNS = `id, source, source_key, kind, mode, callsign, dmr_id, name, operator, tx_hz, tx_high_hz, rx_hz, rx_high_hz,
+// filter fields of the index
+const INDEX_COLUMNS = `id, source, kind, sector, owner, active, duplicate_of, lat, lon, tx_hz, tx_high_hz, rx_hz, rx_high_hz,
+	callsign, dmr_id, name, operator, location, city,
+	CASE WHEN source = 'ratel-reg203' THEN raw->>'vrsta' END AS vrsta`;
+// full rows of a result page
+const ROW_COLUMNS = `id, source, source_key, kind, mode, callsign, dmr_id, name, operator, tx_hz, tx_high_hz, rx_hz, rx_high_hz,
 	city, location, locator, lat, lon, coord_source, coord_accuracy_m, active, sector, owner, duplicate_of,
-	CASE WHEN source = 'ratel-reg203' THEN raw->>'vrsta' END AS vrsta,
-	CASE WHEN source IN (${access.SOURCES.map((source) => "'" + source + "'").join(", ")}) THEN raw END AS access_raw`;
+	CASE WHEN source = 'ratel-reg203' THEN raw->>'vrsta' END AS vrsta`;
 
 let cache = null;
+let idleTimer = null;
 
-// Tone / colour code of a row: its own, missing fields from the station's other listings
-const withStationAccess = (rows) => {
-	const own = new Map();
-	const byStation = new Map();
-
-	rows.filter((row) => {
-		return row.access_raw;
-	}).forEach((row) => {
-		const station = row.duplicate_of || row.id;
-		own.set(row.id, access.fromRaw(row.source, row.access_raw));
-		byStation.set(station, (byStation.get(station) || []).concat([row.id]));
-	});
-
-	return (row) => {
-		const others = (byStation.get(row.duplicate_of || row.id) || []).filter((id) => {
-			return id !== row.id;
-		});
-
-		return access.merge([own.get(row.id)].concat(others.map((id) => {
-			return own.get(id);
-		})));
-	};
+const forgetLater = () => {
+	clearTimeout(idleTimer);
+	idleTimer = setTimeout(() => {
+		cache = null;
+	}, IDLE_MS);
+	idleTimer.unref();
 };
 
 const load = () => {
 	const db = storage.getDatabase();
 	const version = JSON.stringify(db.prepare("SELECT id, fetched_at FROM sources ORDER BY id").all());
 
+	forgetLater();
+
 	if (cache && cache.version === version) {
 		return cache.rows;
 	}
 
-	const loaded = db.prepare("SELECT " + COLUMNS + " FROM emitters").all();
-	const stationAccess = withStationAccess(loaded);
-	const rows = loaded.map((row) => {
+	cache = null;
+
+	const rows = db.prepare("SELECT " + INDEX_COLUMNS + " FROM emitters").iterate().map((row) => {
 		const vrsta = (row.vrsta || "").split("/");
 
-		return Object.freeze(Object.assign(row, {
-			access_raw: undefined,
-			access: stationAccess(row),
+		return {
+			id: row.id,
+			source: row.source,
+			kind: row.kind,
+			sector: row.sector,
+			owner: row.owner,
+			active: row.active,
+			duplicate_of: row.duplicate_of,
+			lat: row.lat,
+			lon: row.lon,
+			tx_hz: row.tx_hz,
+			tx_high_hz: row.tx_high_hz,
+			rx_hz: row.rx_hz,
+			rx_high_hz: row.rx_high_hz,
 			station_type: vrsta[0] || null,
 			service_type: vrsta.slice(1).join("/") || null,
 			haystack: fold([row.callsign, row.dmr_id, row.name, row.operator, row.location, row.city].filter(Boolean).join(" "))
-		}));
-	});
+		};
+	}).toArray();
 
 	cache = { version: version, rows: rows };
 	return rows;
+};
+
+// Tone / colour code of a station: its own listing's, missing fields from its other listings
+const accessOf = (db, row) => {
+	if (!access.SOURCES.includes(row.source)) {
+		return null;
+	}
+
+	const station = row.duplicate_of || row.id;
+	const listings = db.prepare(`SELECT id, source, raw FROM emitters WHERE (id = ? OR duplicate_of = ?)
+		ORDER BY id = ? DESC, duplicate_of IS NOT NULL, id`).all(station, station, row.id);
+
+	return access.merge(listings.map((listing) => {
+		return access.fromRaw(listing.source, listing.raw);
+	}));
+};
+
+// Full rows for a page of index entries, in the same order (distance_km kept)
+const hydrate = (entries) => {
+	const db = storage.getDatabase();
+	const select = db.prepare("SELECT " + ROW_COLUMNS + " FROM emitters WHERE id = ?");
+
+	return entries.map((entry) => {
+		const row = select.get(entry.id);
+		const vrsta = (row.vrsta || "").split("/");
+
+		return Object.assign(row, {
+			vrsta: undefined,
+			station_type: vrsta[0] || null,
+			service_type: vrsta.slice(1).join("/") || null,
+			access: accessOf(db, row)
+		}, entry.distance_km === undefined ? {} : { distance_km: entry.distance_km });
+	});
 };
 
 const toRadians = (degrees) => {
@@ -107,6 +148,7 @@ const inList = (list, value) => {
  * @param {boolean} [options.includeDuplicates=false] - Also return other sources' listings of the same station
  * @param {boolean} [options.withPositionOnly=false]
  * @param {{lat: number, lon: number, radiusKm: number}} [options.near] - Only within radius, nearest first
+ * @param {number} [options.nearHz] - Sort by distance of TX or RX from this frequency (ignored with `near`)
  * @param {number} [options.limit]
  * @param {number} [options.offset]
  * @returns {{total: number, rows: Object[]}} rows carry distance_km when `near` is given
@@ -154,19 +196,30 @@ const search = (options) => {
 		});
 	});
 
+	if (!near && options.nearHz !== undefined) {
+		const offFrequency = (row) => {
+			return Math.min(row.tx_hz === null ? Infinity : Math.abs(row.tx_hz - options.nearHz), row.rx_hz === null ? Infinity : Math.abs(row.rx_hz - options.nearHz));
+		};
+		const sorted = matched.slice().sort((a, b) => {
+			return offFrequency(a) - offFrequency(b);
+		});
+
+		return { total: sorted.length, rows: hydrate(sorted.slice(offset, offset + limit)) };
+	}
+
 	if (!near) {
-		return { total: matched.length, rows: matched.slice(offset, offset + limit) };
+		return { total: matched.length, rows: hydrate(matched.slice(offset, offset + limit)) };
 	}
 
 	const nearby = matched.map((row) => {
-		return Object.assign({}, row, { distance_km: distanceKm(near.lat, near.lon, row.lat, row.lon) });
+		return { id: row.id, distance_km: distanceKm(near.lat, near.lon, row.lat, row.lon) };
 	}).filter((row) => {
 		return row.distance_km <= near.radiusKm;
 	}).sort((a, b) => {
 		return a.distance_km - b.distance_km;
 	});
 
-	return { total: nearby.length, rows: nearby.slice(offset, offset + limit) };
+	return { total: nearby.length, rows: hydrate(nearby.slice(offset, offset + limit)) };
 };
 
 const getStats = () => {

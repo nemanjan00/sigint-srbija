@@ -197,25 +197,13 @@ const createServer = (baseUrl) => {
 	}, (args) => {
 		const centre = args.mhz * 1e6;
 		const tolerance = (args.tolerance_khz === undefined ? DEFAULT_TOLERANCE_KHZ : args.tolerance_khz) * 1e3;
-		const all = search.search(Object.assign(toSearchOptions(args), {
+		const found = search.search(Object.assign(toSearchOptions(args), {
 			minHz: centre - tolerance,
 			maxHz: centre + tolerance,
-			limit: search.MAX_LIMIT * 50
+			nearHz: centre
 		}));
-		const offFrequency = (row) => {
-			return Math.min.apply(null, [row.tx_hz, row.rx_hz].filter((hz) => {
-				return hz !== null;
-			}).map((hz) => {
-				return Math.abs(hz - centre);
-			}).concat([Infinity]));
-		};
-		const sorted = all.rows.slice().sort((a, b) => {
-			return offFrequency(a) - offFrequency(b);
-		});
-		const offset = args.offset || 0;
-		const limit = Math.min(args.limit || search.DEFAULT_LIMIT, search.MAX_LIMIT);
 
-		return jsonResult(resultPage({ total: all.total, rows: sorted.slice(offset, offset + limit) }, baseUrl, limit, offset));
+		return jsonResult(resultPage(found, baseUrl, args.limit, args.offset));
 	});
 
 	server.registerTool("get_emitter", {
@@ -293,7 +281,7 @@ const createServer = (baseUrl) => {
 		inputSchema: {},
 		annotations: { readOnlyHint: true, openWorldHint: false }
 	}, () => {
-		const map = emitters.getMapData();
+		const map = emitters.getMapMeta();
 
 		return jsonResult(Object.assign({
 			map: baseUrl,
